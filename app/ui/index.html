@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Document Q&amp;A</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f7f9; --border: #e2e5ea; --text: #16181d;
+    --muted: #6b7280; --accent: #2f6df6; --accent-soft: #e8f0fe; --code: #f0f2f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1c1f25; --border: #2b303a; --text: #e8eaed;
+      --muted: #9aa2ad; --accent: #6b9cff; --accent-soft: #22304d; --code: #22262e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; display: flex; flex-direction: column;
+    background: var(--bg); color: var(--text);
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0; font-weight: 650; }
+  .badge {
+    font-size: 12px; color: var(--muted); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  }
+  .badge.err { color: #d14343; border-color: #d14343; }
+  #chat { flex: 1; overflow-y: auto; padding: 24px 20px; }
+  .wrap { max-width: 780px; margin: 0 auto; }
+  .msg { margin-bottom: 22px; }
+  .role {
+    font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .05em; margin-bottom: 6px;
+  }
+  .bubble { white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user .bubble {
+    background: var(--accent-soft); border-radius: 12px; padding: 10px 14px; display: inline-block;
+  }
+  .cite {
+    display: inline-block; min-width: 18px; text-align: center; font-size: 11px; font-weight: 700;
+    color: var(--accent); background: var(--accent-soft); border-radius: 4px;
+    padding: 1px 5px; margin: 0 1px; cursor: pointer;
+  }
+  details.sources {
+    margin-top: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+  }
+  details.sources > summary {
+    cursor: pointer; padding: 9px 14px; font-size: 13px; color: var(--muted); user-select: none;
+  }
+  .src { border-top: 1px solid var(--border); padding: 10px 14px; font-size: 13px; }
+  .src.hl { background: var(--accent-soft); }
+  .src .loc { font-weight: 650; margin-bottom: 4px; }
+  .src .snip { color: var(--muted); white-space: pre-wrap; font-size: 12.5px; }
+  .meta { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  footer { border-top: 1px solid var(--border); background: var(--panel); padding: 14px 20px; }
+  form { max-width: 780px; margin: 0 auto; display: flex; gap: 10px; }
+  textarea {
+    flex: 1; resize: none; font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; max-height: 160px;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    font: inherit; font-weight: 600; color: #fff; background: var(--accent);
+    border: 0; border-radius: 10px; padding: 0 20px; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .empty { color: var(--muted); text-align: center; margin-top: 12vh; }
+  .empty code { background: var(--code); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .dots::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
+  @keyframes dots {
+    0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Document Q&amp;A</h1>
+  <span class="badge" id="model">connecting…</span>
+  <span class="badge" id="corpus"></span>
+</header>
+
+<div id="chat"><div class="wrap" id="thread">
+  <div class="empty" id="empty">
+    Ask a question about your indexed documents.<br>
+    <small>Nothing indexed yet? Put files in <code>data/</code> and run <code>python -m app.ingest</code></small>
+  </div>
+</div></div>
+
+<footer>
+  <form id="form">
+    <textarea id="q" rows="1" placeholder="Ask about the documentation…  (Enter to send, Shift+Enter for newline)" autofocus></textarea>
+    <button id="send" type="submit">Ask</button>
+  </form>
+</footer>
+
+<script>
+const thread = document.getElementById('thread');
+const form = document.getElementById('form');
+const input = document.getElementById('q');
+const sendBtn = document.getElementById('send');
+const history = [];
+
+input.addEventListener('input', () => {
+  input.style.height = 'auto';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+});
+
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); form.requestSubmit(); }
+});
+
+fetch('/health').then(r => r.json()).then(h => {
+  const model = document.getElementById('model');
+  if (h.status === 'ok') {
+    model.textContent = h.chat_model + ' · top-' + h.top_k + (h.hybrid_retrieval ? ' · hybrid' : '');
+    fetch('/sources').then(r => r.json()).then(s => {
+      document.getElementById('corpus').textContent =
+        s.document_count + ' docs · ' + s.chunk_count.toLocaleString() + ' chunks';
+    });
+  } else {
+    model.className = 'badge err';
+    model.textContent = 'index not ready';
+    const empty = document.getElementById('empty');
+    if (empty) {
+      empty.textContent = '';
+      const b = document.createElement('b');
+      b.textContent = 'Index not ready.';
+      const small = document.createElement('small');
+      small.textContent = h.detail || '';
+      empty.append(b, document.createElement('br'), small);
+    }
+  }
+}).catch(() => { document.getElementById('model').textContent = 'offline'; });
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+}
+
+function scroll() {
+  const chat = document.getElementById('chat');
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function addMessage(role, text) {
+  const empty = document.getElementById('empty');
+  if (empty) empty.remove();
+  const msg = el('div', 'msg ' + role);
+  msg.appendChild(el('div', 'role', role === 'user' ? 'You' : 'Assistant'));
+  const bubble = el('div', 'bubble', text || '');
+  msg.appendChild(bubble);
+  thread.appendChild(msg);
+  scroll();
+  return { msg: msg, bubble: bubble };
+}
+
+// Turn "[2]" into a chip that highlights the matching source card.
+function linkCitations(bubble, raw, msg) {
+  bubble.textContent = '';
+  const parts = raw.split(/(\[\d+\](?:\[\d+\])*)/g);
+  for (const part of parts) {
+    if (/^(\[\d+\])+$/.test(part)) {
+      for (const n of part.match(/\d+/g)) {
+        const chip = el('span', 'cite', n);
+        chip.onclick = () => {
+          const details = msg.querySelector('details.sources');
+          if (details) details.open = true;
+          const card = msg.querySelector('.src[data-n="' + n + '"]');
+          if (card) {
+            msg.querySelectorAll('.src').forEach(s => s.classList.remove('hl'));
+            card.classList.add('hl');
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        };
+        bubble.appendChild(chip);
+      }
+    } else if (part) {
+      bubble.appendChild(document.createTextNode(part));
+    }
+  }
+}
+
+function renderSources(msg, sources, query) {
+  if (!sources || !sources.length) return;
+  const details = el('details', 'sources');
+  details.appendChild(el('summary', null, sources.length + ' source' + (sources.length > 1 ? 's' : '')));
+  for (const s of sources) {
+    const card = el('div', 'src');
+    card.dataset.n = s.n;
+    card.appendChild(el('div', 'loc', '[' + s.n + '] ' + s.source + (s.page ? ' · page ' + s.page : '')));
+    card.appendChild(el('div', 'snip', s.snippet));
+    details.appendChild(card);
+  }
+  msg.appendChild(details);
+  if (query) msg.appendChild(el('div', 'meta', 'search query: ' + query));
+}
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  const question = input.value.trim();
+  if (!question) return;
+
+  input.value = '';
+  input.style.height = 'auto';
+  sendBtn.disabled = true;
+  addMessage('user', question);
+
+  const out = addMessage('assistant', '');
+  const msg = out.msg, bubble = out.bubble;
+  bubble.className = 'bubble dots';
+  let answer = '', sources = [], query = '';
+
+  try {
+    const res = await fetch('/ask/stream', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: question, history: history.slice(-6) })
+    });
+    if (!res.ok) {
+      let detail = res.statusText;
+      try { detail = (await res.json()).detail || detail; } catch (_) {}
+      throw new Error(detail);
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const step = await reader.read();
+      if (step.done) break;
+      buffer += decoder.decode(step.value, { stream: true });
+      const frames = buffer.split('\n\n');
+      buffer = frames.pop();
+
+      for (const frame of frames) {
+        if (frame.indexOf('data: ') !== 0) continue;
+        const ev = JSON.parse(frame.slice(6));
+        if (ev.type === 'sources') {
+          sources = ev.sources;
+          query = ev.search_query;
+        } else if (ev.type === 'token') {
+          bubble.className = 'bubble';
+          answer += ev.text;
+          bubble.textContent = answer;
+          scroll();
+        } else if (ev.type === 'error') {
+          throw new Error(ev.message);
+        }
+      }
+    }
+
+    linkCitations(bubble, answer, msg);
+    renderSources(msg, sources, query);
+    history.push({ role: 'user', content: question });
+    history.push({ role: 'assistant', content: answer });
+  } catch (err) {
+    bubble.className = 'bubble';
+    bubble.textContent = 'Error: ' + err.message;
+  } finally {
+    sendBtn.disabled = false;
+    input.focus();
+    scroll();
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+.env
+faiss_index/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+data/*
+!data/.gitkeep
+!data/samples/
+eval/results/
+.embed_cache/
+models/
+.cache/

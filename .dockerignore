@@ -1,0 +1,14 @@
+.git/
+.gitignore
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+faiss_index/
+data/*
+!data/samples/
+eval/results/
+README.md
+Dockerfile
+docker-compose.yml

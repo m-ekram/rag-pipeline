@@ -1,0 +1,24 @@
+services:
+  api:
+    build: .
+    image: rag-doc-qa:latest
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./faiss_index:/app/faiss_index
+    restart: unless-stopped
+
+  # One-shot ingestion:  docker compose run --rm ingest
+  ingest:
+    build: .
+    image: rag-doc-qa:latest
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data:ro
+      - ./faiss_index:/app/faiss_index
+    command: ["python", "-m", "app.ingest", "--rebuild"]
+    profiles: ["tools"]

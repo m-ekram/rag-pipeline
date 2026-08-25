@@ -1,0 +1,29 @@
+# --- core RAG stack ---
+langchain>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-text-splitters>=0.3.0
+faiss-cpu>=1.8.0
+
+# --- providers (google is the default; openai is optional) ---
+langchain-google-genai>=2.0.0
+langchain-openai>=0.2.0
+
+# --- document loading ---
+pypdf>=4.2.0
+beautifulsoup4>=4.12.0
+python-docx>=1.1.0
+
+# --- retrieval ---
+rank-bm25>=0.2.2
+
+# --- serving ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+sse-starlette>=2.1.0
+
+# --- misc ---
+python-dotenv>=1.0.0
+pyyaml>=6.0
+tqdm>=4.66.0
