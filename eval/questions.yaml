@@ -1,90 +1,202 @@
-# Golden set for retrieval evaluation.
+# Golden set for retrieval evaluation against the FastAPI documentation corpus
+# (data/fastapi/, built by scripts/prepare_fastapi_docs.py).
 #
 #   question          what a user would actually type
 #   relevant_sources  path suffix(es) that should be retrieved
-#   must_contain      optional - the chunk must also contain one of these
+#   must_contain      optional - the chunk must ALSO contain one of these
 #                     strings, so "right file" alone does not count as a hit
 #
-# Aim for 30-50 entries on a real corpus. Include paraphrases, exact
-# identifiers, and multi-hop questions - those three classes fail for different
-# reasons and mixing them is what makes the number meaningful.
+# The set deliberately mixes three failure classes, because they break for
+# different reasons and a number averaged over only one of them is misleading:
+#
+#   exact      names an identifier verbatim (UploadFile, root_path). Dense
+#              search smooths identifiers away; BM25 is what saves these.
+#   paraphrase describes the concept in the user's own words with little or no
+#              lexical overlap. BM25 is useless here; embeddings carry it.
+#   multihop   the answer lives in a section the question does not name, or
+#              needs two facts joined.
+#
+# 36 questions. Tags are documentation only - the scorer ignores them.
 
-- question: How long does an access token stay valid?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["3600"]
+# ---------------------------------------------------------------- exact ----
+- question: What is UploadFile used for?
+  tags: [exact]
+  relevant_sources: [tutorial__request-files.md]
+  must_contain: ["UploadFile"]
 
-- question: What happens if a client reuses a refresh token?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["ERR_TOKEN_REPLAY"]
+- question: What does jsonable_encoder do?
+  tags: [exact]
+  relevant_sources: [tutorial__encoder.md]
+  must_contain: ["jsonable_encoder"]
 
-- question: What is ERR_RATE_LIMITED?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["ERR_RATE_LIMITED"]
+- question: What is root_path in FastAPI?
+  tags: [exact]
+  relevant_sources: [advanced__behind-a-proxy.md]
+  must_contain: ["root_path"]
 
-- question: How many requests per minute does the Standard tier allow?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["600"]
+- question: How do I use response_model_exclude_unset?
+  tags: [exact]
+  relevant_sources: [tutorial__response-model.md]
+  must_contain: ["response_model_exclude_unset"]
 
-- question: Does the gateway retry POST requests automatically?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["Idempotency-Key", "never retried"]
+- question: What is OAuth2PasswordBearer?
+  tags: [exact]
+  relevant_sources: [tutorial__security__first-steps.md, tutorial__security__index.md]
+  must_contain: ["OAuth2PasswordBearer"]
 
-- question: What is the maximum size of a request body?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["10 MB"]
+- question: How do I use BackgroundTasks?
+  tags: [exact]
+  relevant_sources: [tutorial__background-tasks.md]
+  must_contain: ["BackgroundTasks"]
 
-- question: What happens to rate limiting when Redis goes down?
-  relevant_sources: [api-gateway.md]
-  must_contain: ["fails open", "fails closed"]
+- question: What does CORSMiddleware do?
+  tags: [exact]
+  relevant_sources: [tutorial__cors.md]
+  must_contain: ["CORSMiddleware"]
 
-- question: Which environment variables must be set for a service to boot?
-  relevant_sources: [deployment-runbook.md]
-  must_contain: ["DATABASE_URL"]
+- question: How is Annotated used with Query?
+  tags: [exact]
+  relevant_sources: [tutorial__query-params-str-validations.md]
+  must_contain: ["Annotated"]
 
-- question: How do I roll back a bad release?
-  relevant_sources: [deployment-runbook.md]
-  must_contain: ["--immediate", "orbitctl deploy --tag"]
+- question: What is StreamingResponse?
+  tags: [exact]
+  relevant_sources: [advanced__custom-response.md, tutorial__stream-json-lines.md]
+  must_contain: ["StreamingResponse"]
 
-- question: When should we abandon a deploy and revert?
-  relevant_sources: [deployment-runbook.md]
-  must_contain: ["Error rate above 2%", "p99 latency"]
+- question: How do I use HTTPException?
+  tags: [exact]
+  relevant_sources: [tutorial__handling-errors.md]
+  must_contain: ["HTTPException"]
 
-- question: Are database migrations rolled back automatically?
-  relevant_sources: [deployment-runbook.md]
-  must_contain: ["expand-then-contract", "not** rolled back", "not rolled back"]
+- question: What is TestClient?
+  tags: [exact]
+  relevant_sources: [tutorial__testing.md, advanced__async-tests.md]
+  must_contain: ["TestClient"]
 
-- question: Why should healthz avoid checking the database?
-  relevant_sources: [deployment-runbook.md]
-  must_contain: ["readyz", "out of rotation"]
+- question: How do I declare a WebSocket endpoint?
+  tags: [exact]
+  relevant_sources: [advanced__websockets.md]
+  must_contain: ["WebSocket"]
 
-- question: How many pod probe failures cause a restart?
-  relevant_sources: [deployment-runbook.md]
-  must_contain: ["ten consecutive"]
+# ----------------------------------------------------------- paraphrase ----
+- question: How do I send a file from a browser to my API?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__request-files.md, tutorial__request-forms-and-files.md]
+  must_contain: ["UploadFile", "File("]
 
-- question: What does bloom_bits_per_key control?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["bloom_bits_per_key"]
+- question: How can I make my API reject a request with a helpful message when something is wrong?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__handling-errors.md]
+  must_contain: ["HTTPException", "exception_handler"]
 
-- question: My writes keep stalling - what is going on?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["level0_stall_trigger", "Write stalls"]
+- question: How do I stop my API from returning a user's password in the response?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__response-model.md, tutorial__extra-models.md]
+  must_contain: ["response_model", "password"]
 
-- question: Which wal_sync setting is safe against power loss?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["always"]
+- question: How do I run some code once when the application starts up?
+  tags: [paraphrase]
+  relevant_sources: [advanced__events.md]
+  must_contain: ["lifespan", "startup"]
 
-- question: How do I take a backup without stopping the database?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["snapshot create", "hard links"]
+- question: How do I share a database connection across many endpoints without repeating myself?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__dependencies__index.md, tutorial__sql-databases.md, tutorial__dependencies__dependencies-with-yield.md]
+  must_contain: ["Depends", "SessionDep"]
 
-- question: What causes HAL_E_TOO_MANY_FILES?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["max_open_files"]
+- question: My frontend on another domain gets blocked by the browser. How do I fix it?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__cors.md]
+  must_contain: ["CORSMiddleware", "origins"]
 
-- question: How should I tune the engine for a read-heavy workload?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["block_cache_mb"]
+- question: How do I do slow work after replying to the user?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__background-tasks.md]
+  must_contain: ["BackgroundTasks", "background"]
 
-- question: How long does restoring 500 GB take?
-  relevant_sources: [storage-engine.md]
-  must_contain: ["4 minutes per 100 GB"]
+- question: How do I read configuration from environment variables?
+  tags: [paraphrase]
+  relevant_sources: [advanced__settings.md, environment-variables.md]
+  must_contain: ["BaseSettings", "environment variable"]
+
+- question: How do I check that my endpoints actually work before shipping?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__testing.md]
+  must_contain: ["TestClient", "pytest"]
+
+- question: How do I restrict a number to a valid range in the URL?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__path-params-numeric-validations.md, tutorial__query-params-str-validations.md]
+  must_contain: ["ge=", "gt=", "le="]
+
+- question: How do I keep a connection open and push updates to the client?
+  tags: [paraphrase]
+  relevant_sources: [advanced__websockets.md, tutorial__server-sent-events.md]
+  must_contain: ["WebSocket", "EventSource", "server-sent"]
+
+- question: How do I convert an object into something JSON-serialisable?
+  tags: [paraphrase]
+  relevant_sources: [tutorial__encoder.md]
+  must_contain: ["jsonable_encoder"]
+
+# ------------------------------------------------------------- multihop ----
+- question: How do I package my FastAPI app to run in a container?
+  tags: [multihop]
+  relevant_sources: [deployment__docker.md]
+  must_contain: ["Dockerfile", "CMD"]
+
+- question: How many worker processes should I run in production?
+  tags: [multihop]
+  relevant_sources: [deployment__server-workers.md, deployment__concepts.md]
+  must_contain: ["--workers", "worker"]
+
+- question: My app is behind nginx and the generated docs URLs are wrong. What do I set?
+  tags: [multihop]
+  relevant_sources: [advanced__behind-a-proxy.md]
+  must_contain: ["root_path"]
+
+- question: How do I hash and verify user passwords?
+  tags: [multihop]
+  relevant_sources: [tutorial__security__oauth2-jwt.md]
+  must_contain: ["bcrypt", "hash"]
+
+- question: How do I get the currently logged-in user inside an endpoint?
+  tags: [multihop]
+  relevant_sources: [tutorial__security__get-current-user.md]
+  must_contain: ["get_current_user", "Depends"]
+
+- question: What is the difference between a path parameter and a query parameter?
+  tags: [multihop]
+  relevant_sources: [tutorial__path-params.md, tutorial__query-params.md]
+  must_contain: ["path parameter", "query parameter"]
+
+- question: When should I use async def instead of def for an endpoint?
+  tags: [multihop]
+  relevant_sources: [async.md]
+  must_contain: ["async def", "await"]
+
+- question: How do I close a database session reliably even if the endpoint raises?
+  tags: [multihop]
+  relevant_sources: [tutorial__dependencies__dependencies-with-yield.md]
+  must_contain: ["yield"]
+
+- question: How do I add a description and tags that show up in the docs UI?
+  tags: [multihop]
+  relevant_sources: [tutorial__path-operation-configuration.md, tutorial__metadata.md]
+  must_contain: ["tags", "summary", "description"]
+
+- question: How do I serve CSS and images from my FastAPI app?
+  tags: [multihop]
+  relevant_sources: [tutorial__static-files.md]
+  must_contain: ["StaticFiles"]
+
+- question: How do I return a 201 instead of the default status code?
+  tags: [multihop]
+  relevant_sources: [tutorial__response-status-code.md]
+  must_contain: ["status_code"]
+
+- question: How do I set up HTTPS for a FastAPI deployment?
+  tags: [multihop]
+  relevant_sources: [deployment__https.md]
+  must_contain: ["HTTPS", "TLS", "certificate"]

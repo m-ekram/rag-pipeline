@@ -5,7 +5,18 @@ langchain-community>=0.3.0
 langchain-text-splitters>=0.3.0
 faiss-cpu>=1.8.0
 
-# --- providers (google is the default; openai is optional) ---
+# --- local inference (the default: no API key, no quota) ---
+# torch: install the CPU build first to avoid pulling ~2.5 GB of CUDA:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+sentence-transformers>=3.0.0     # embeddings: BAAI/bge-small-en-v1.5
+langchain-huggingface>=0.1.0
+# llama-cpp-python: prebuilt CPU wheel avoids a source build (which fails on
+# Windows due to MAX_PATH). Install with:
+#   pip install llama-cpp-python --only-binary :all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0          # chat: Qwen2.5-3B-Instruct Q4_K_M (GGUF)
+huggingface-hub>=0.24.0
+
+# --- hosted providers (optional alternatives) ---
 langchain-google-genai>=2.0.0
 langchain-openai>=0.2.0
 
