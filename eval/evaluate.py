@@ -51,7 +51,7 @@ CONFIGS = {
         "mmr": False,
     },
     "tuned": {
-        "label": "structure-aware chunks + overlap + headers, hybrid BM25/dense + MMR",
+        "label": "structure-aware chunks + overlap + headers, hybrid BM25/dense, MMR off",
         "splitter": "structured",
         "chunk_size": config.CHUNK_SIZE,
         "chunk_overlap": config.CHUNK_OVERLAP,
@@ -60,6 +60,67 @@ CONFIGS = {
         "mmr": True,
     },
 }
+
+
+# Retrieval ablations. All share the tuned chunk set, so the embedding cost is
+# paid once and each variant differs only in how candidates are ranked. This is
+# what separates "hybrid helps" from "we changed five things and it moved".
+ABLATIONS = {
+    "dense-only": {"hybrid": False, "mmr": False},
+    "dense+mmr": {"hybrid": False, "mmr": True},
+    "hybrid": {"hybrid": True, "mmr": False},
+    "hybrid+mmr": {"hybrid": True, "mmr": True},
+    "hybrid+mmr(l=0.8)": {"hybrid": True, "mmr": True, "lambda": 0.8},
+    "hybrid+mmr(l=1.0)": {"hybrid": True, "mmr": True, "lambda": 1.0},
+    "sparse-heavy": {"hybrid": True, "mmr": True, "weights": (0.4, 0.6)},
+}
+
+
+def run_ablations(docs: list[Document], questions: list[dict], k: int) -> list[dict]:
+    """Vary only the retriever; chunks and vectors are built once and reused."""
+    chunks = build_chunks(docs, CONFIGS["tuned"])
+    print(f"\nBuilding shared index: {len(chunks)} chunks (embedded once, reused by every variant)")
+    store = build_index(chunks, show_progress=False)
+
+    results = []
+    original = (config.USE_HYBRID, config.MMR_LAMBDA, config.HYBRID_WEIGHTS)
+    try:
+        for name, spec in ABLATIONS.items():
+            config.USE_HYBRID = spec["hybrid"]
+            config.MMR_LAMBDA = spec.get("lambda", 1.0 if not spec["mmr"] else original[1])
+            config.HYBRID_WEIGHTS = spec.get("weights", original[2])
+            retriever = build_retriever(store, chunks, k) if spec["hybrid"] or spec["mmr"] else dense_only_retriever(store, k)
+
+            hits = 0
+            rr: list[float] = []
+            prec: list[float] = []
+            for q in questions:
+                got = retriever.invoke(q["question"])[:k]
+                flags = [is_relevant(d, q) for d in got]
+                hit = any(flags)
+                hits += hit
+                rank = flags.index(True) + 1 if hit else 0
+                rr.append(1.0 / rank if rank else 0.0)
+                prec.append(sum(flags) / len(flags) if flags else 0.0)
+
+            n = len(questions)
+            results.append(
+                {
+                    "config": name,
+                    "label": str(spec),
+                    "k": k,
+                    "questions": n,
+                    "chunks": len(chunks),
+                    "hit_rate": hits / n,
+                    "mrr": sum(rr) / n,
+                    "precision": sum(prec) / n,
+                    "detail": [],
+                }
+            )
+            print(f"  {name:20} hit@{k} {hits / n:6.1%}  MRR {results[-1]['mrr']:.3f}  P@{k} {results[-1]['precision']:6.1%}")
+    finally:
+        config.USE_HYBRID, config.MMR_LAMBDA, config.HYBRID_WEIGHTS = original
+    return results
 
 
 def load_questions() -> list[dict]:
@@ -81,6 +142,41 @@ def is_relevant(doc: Document, question: dict) -> bool:
         return True
     text = doc.page_content.lower()
     return any(p.lower() in text for p in phrases)
+
+
+def validate(docs: list[Document], questions: list[dict]) -> int:
+    """Check every question is answerable before spending time on embeddings.
+
+    A question whose `relevant_sources` do not exist, or whose `must_contain`
+    string appears in no chunk of those sources, can never be scored a hit. It
+    would silently drag the reported hit_rate down and make the number
+    meaningless. Better to fail loudly than to measure the wrong thing.
+    """
+    chunks = build_chunks(docs, CONFIGS["tuned"])
+    by_source: dict[str, list[str]] = {}
+    for chunk in chunks:
+        by_source.setdefault(chunk.metadata.get("source", ""), []).append(chunk.page_content.lower())
+
+    problems = 0
+    for q in questions:
+        matching = [s for s in by_source if any(s.endswith(r) for r in q["relevant_sources"])]
+        if not matching:
+            print(f"  UNREACHABLE  no such source {q['relevant_sources']}\n               {q['question']}")
+            problems += 1
+            continue
+        phrases = q.get("must_contain")
+        if not phrases:
+            continue
+        texts = [t for s in matching for t in by_source[s]]
+        if not any(p.lower() in t for p in phrases for t in texts):
+            print(f"  UNMATCHED    none of {phrases} appear in {matching}\n               {q['question']}")
+            problems += 1
+
+    if problems:
+        print(f"\n{problems}/{len(questions)} question(s) can never be scored a hit - fix these first.")
+    else:
+        print(f"All {len(questions)} questions are reachable in the corpus.")
+    return problems
 
 
 def build_chunks(docs: list[Document], cfg: dict) -> list[Document]:
@@ -195,15 +291,35 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", choices=sorted(CONFIGS), help="evaluate a single configuration")
     parser.add_argument("--compare", action="store_true", help="baseline vs tuned (default)")
     parser.add_argument("--sweep", action="store_true", help="grid over chunk sizes and overlaps")
+    parser.add_argument("--ablate", action="store_true", help="isolate each retrieval component")
     parser.add_argument("--data-dir", default=config.DATA_DIR)
     parser.add_argument("-k", type=int, default=config.TOP_K)
     parser.add_argument("--save", action="store_true", help="write JSON to eval/results/")
+    parser.add_argument(
+        "--validate",
+        action="store_true",
+        help="check every question is reachable in the corpus, then exit (no embedding)",
+    )
     args = parser.parse_args(argv)
 
-    config.require_embed_key()
     questions = load_questions()
     docs = load_directory(args.data_dir)
     print(f"{len(questions)} golden questions | {len(docs)} loaded section(s) | k={args.k}")
+
+    if args.validate:
+        return 1 if validate(docs, questions) else 0
+
+    config.require_embed_key()
+
+    if args.ablate:
+        results = run_ablations(docs, questions, args.k)
+        print_comparison(results, args.k)
+        if args.save:
+            RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+            out = RESULTS_DIR / f"ablate-{time.strftime('%Y%m%d-%H%M%S')}.json"
+            out.write_text(json.dumps(results, indent=2), encoding="utf-8")
+            print(f"Saved {out}")
+        return 0
 
     if args.sweep:
         results = []

@@ -252,6 +252,11 @@ form.addEventListener('submit', async e => {
           answer += ev.text;
           bubble.textContent = answer;
           scroll();
+        } else if (ev.type === 'replace') {
+          // Computed attribution arrives once the answer is complete.
+          answer = ev.text;
+          bubble.textContent = answer;
+          scroll();
         } else if (ev.type === 'error') {
           throw new Error(ev.message);
         }

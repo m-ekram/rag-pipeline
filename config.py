@@ -56,6 +56,16 @@ LLAMA_N_CTX = _int("LLAMA_N_CTX", 4096)
 LLAMA_N_THREADS = _int("LLAMA_N_THREADS", os.cpu_count() or 4)
 LLAMA_N_BATCH = _int("LLAMA_N_BATCH", 512)
 LLAMA_MAX_TOKENS = _int("LLAMA_MAX_TOKENS", 512)
+
+# --- citations ----------------------------------------------------------------
+# "model"  trust the model to emit [n] markers (fine for hosted models)
+# "auto"   fall back to computed attribution when the model emits none
+# "off"    never annotate; the source panel still lists what was retrieved
+# Local models below ~7B routinely ignore the citation instruction, so "auto"
+# is the default there.
+CITATION_MODE = os.getenv("CITATION_MODE", "auto" if PROVIDER == "local" else "model").strip().lower()
+CITE_THRESHOLD = _float("CITE_THRESHOLD", 0.55)
+CITE_MIN_CHARS = _int("CITE_MIN_CHARS", 40)
 TEMPERATURE = _float("TEMPERATURE", 0.0)
 
 # --- paths --------------------------------------------------------------------
@@ -70,7 +80,13 @@ MIN_CHUNK_CHARS = _int("MIN_CHUNK_CHARS", 80)  # drop near-empty fragments
 # --- retrieval ----------------------------------------------------------------
 TOP_K = _int("TOP_K", 5)  # chunks handed to the LLM
 FETCH_K = _int("FETCH_K", 20)  # candidates pulled before MMR re-ranking
-MMR_LAMBDA = _float("MMR_LAMBDA", 0.5)  # 1.0 = pure relevance, 0.0 = pure diversity
+# 1.0 = pure relevance, 0.0 = pure diversity.
+# Measured on the FastAPI corpus (eval --ablate, 36 questions): dropping to 0.5
+# cost 5.5 points of hit@5 (83.3% -> 77.8%) and 20 points of precision@5
+# (47.2% -> 27.2%). Diversity re-ranking was removing relevant chunks, not
+# redundant ones, because sibling chunks of one long page are often all needed.
+# Lower it only if your corpus has genuine near-duplicate documents.
+MMR_LAMBDA = _float("MMR_LAMBDA", 1.0)
 USE_HYBRID = _bool("USE_HYBRID", True)  # BM25 + dense ensemble
 HYBRID_WEIGHTS = (
     _float("WEIGHT_DENSE", 0.6),

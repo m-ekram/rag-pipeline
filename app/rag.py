@@ -11,7 +11,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 
 import config
-from app.providers import get_chat_model
+from app.attribution import attribute
+from app.providers import get_chat_model, get_embeddings
 from app.retriever import build_retriever, citations, format_context
 from app.store import index_meta, load_chunks, load_index
 
@@ -89,6 +90,7 @@ class RagEngine:
         self.retriever = build_retriever(self.store, self.chunks)
         self.meta = index_meta(index_dir)
         self.llm = get_chat_model()
+        self._embeddings = get_embeddings()
         logger.info("RAG engine ready | %s | %d chunks", config.summary(), len(self.chunks))
 
     # -- pipeline steps --------------------------------------------------------
@@ -110,6 +112,12 @@ class RagEngine:
 
     # -- public API ------------------------------------------------------------
 
+    def add_citations(self, answer: str, docs: list[Document]) -> str:
+        """Fill in [n] markers when the model did not emit any itself."""
+        if config.CITATION_MODE != "auto":
+            return answer
+        return attribute(answer, docs, self._embeddings)
+
     def ask(self, question: str, history: list[dict] | None = None, top_k: int | None = None) -> dict:
         started = time.time()
         query = self.condense(question, history)
@@ -125,6 +133,7 @@ class RagEngine:
 
         chain = ANSWER_PROMPT | self.llm | StrOutputParser()
         answer = chain.invoke({"context": format_context(docs), "question": question})
+        answer = self.add_citations(answer, docs)
 
         return {
             "answer": answer.strip(),
@@ -148,9 +157,18 @@ class RagEngine:
                 return
 
             chain = ANSWER_PROMPT | self.llm | StrOutputParser()
+            streamed = []
             async for piece in chain.astream({"context": format_context(docs), "question": question}):
                 if piece:
+                    streamed.append(piece)
                     yield {"type": "token", "text": piece}
+
+            # Attribution needs the finished text, so the annotated version is
+            # sent as a final replacement rather than mid-stream.
+            raw = "".join(streamed)
+            cited = self.add_citations(raw, docs)
+            if cited != raw:
+                yield {"type": "replace", "text": cited}
             yield {"type": "done"}
         except Exception as exc:
             logger.exception("Streaming failed")
