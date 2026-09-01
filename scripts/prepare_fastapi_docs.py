@@ -1,6 +1,13 @@
 """Fetch the FastAPI documentation and flatten it into a clean RAG corpus.
 
     python scripts/prepare_fastapi_docs.py
+    python scripts/prepare_fastapi_docs.py --ref 0.140.0 --clean
+    python scripts/prepare_fastapi_docs.py --verify
+
+The upstream ref is pinned (see DEFAULT_REF), and every generated file is
+digested into CORPUS.lock.json. Without that pin the corpus drifts with
+upstream and the measured retrieval numbers quietly stop describing the corpus
+they were measured on; --verify is how you find out that has happened.
 
 FastAPI's docs are MkDocs-Material markdown, which carries three constructs that
 hurt retrieval if fed in raw:
@@ -24,6 +31,8 @@ Licence: FastAPI is MIT (Copyright (c) 2018 Sebastian Ramirez).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -32,6 +41,11 @@ from pathlib import Path
 
 REPO_URL = "https://github.com/fastapi/fastapi.git"
 DOCS_SUBDIR = "docs/en/docs"
+
+# Pinned so the corpus - and therefore every measured number - is reproducible.
+# Bump deliberately, then re-run the eval and update the checked-in baseline.
+DEFAULT_REF = "0.141.1"
+LOCK_FILE = "CORPUS.lock.json"
 
 # Not documentation: changelogs, contributor lists, link directories.
 SKIP_FILES = {
@@ -64,15 +78,45 @@ ADMONITION_CLOSE_RE = re.compile(r"^/{3,}\s*$", re.MULTILINE)
 ANCHOR_RE = re.compile(r"\s*\{\s*#[\w-]+\s*\}\s*$", re.MULTILINE)
 
 
-def clone(repo_dir: Path) -> None:
-    """Shallow, blobless, sparse clone - a few MB instead of the full history."""
+def _git(repo_dir: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=repo_dir, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def checked_out_ref(repo_dir: Path) -> str | None:
+    """The tag currently checked out, or None if this is not a clean tag checkout."""
+    try:
+        return _git(repo_dir, "describe", "--tags", "--exact-match", "HEAD")
+    except (subprocess.CalledProcessError, OSError):
+        return None
+
+
+def head_sha(repo_dir: Path) -> str:
+    return _git(repo_dir, "rev-parse", "HEAD")
+
+
+def clone(repo_dir: Path, ref: str) -> None:
+    """Shallow, blobless, sparse clone at a pinned ref.
+
+    The ref is what makes ingestion reproducible. Cloning the default branch
+    means the corpus silently drifts with upstream, and every measured number
+    quietly stops describing the corpus it was measured on.
+    """
     if (repo_dir / DOCS_SUBDIR).is_dir():
-        print(f"Using existing checkout at {repo_dir}")
-        return
+        if checked_out_ref(repo_dir) == ref:
+            print(f"Using existing checkout at {repo_dir} ({ref})")
+            return
+        print(f"Existing checkout is not {ref}; re-cloning")
+        shutil.rmtree(repo_dir)
+
     repo_dir.parent.mkdir(parents=True, exist_ok=True)
-    print(f"Cloning {REPO_URL} -> {repo_dir}")
+    print(f"Cloning {REPO_URL} at {ref} -> {repo_dir}")
     subprocess.run(
-        ["git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", REPO_URL, str(repo_dir)],
+        [
+            "git", "clone", "--depth", "1", "--branch", ref,
+            "--filter=blob:none", "--sparse", REPO_URL, str(repo_dir),
+        ],
         check=True,
     )
     subprocess.run(
@@ -123,17 +167,107 @@ def clean(text: str, repo_dir: Path, counters: dict) -> str:
     return re.sub(r"\n{3,}", "\n\n", text).strip() + "\n"
 
 
+# --- corpus lock --------------------------------------------------------------
+#
+# The lock is what turns "run this script" into a reproducible corpus. It
+# records the upstream ref actually used and a digest of every file produced,
+# so a corpus that has drifted can be *detected* rather than silently measured.
+
+
+def file_digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def corpus_files(out_dir: Path) -> list[Path]:
+    return sorted(p for p in out_dir.glob("*.md") if p.is_file())
+
+
+def build_lock(out_dir: Path, ref: str, sha: str) -> dict:
+    files = corpus_files(out_dir)
+    return {
+        "source": REPO_URL,
+        "ref": ref,
+        "commit": sha,
+        "docs_subdir": DOCS_SUBDIR,
+        "file_count": len(files),
+        "total_bytes": sum(p.stat().st_size for p in files),
+        "files": {p.name: file_digest(p) for p in files},
+    }
+
+
+def write_lock(out_dir: Path, lock: dict) -> Path:
+    path = out_dir / LOCK_FILE
+    path.write_text(json.dumps(lock, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def read_lock(out_dir: Path) -> dict | None:
+    path = out_dir / LOCK_FILE
+    if not path.is_file():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def verify(out_dir: Path) -> int:
+    """Compare the corpus on disk against the lock. Returns a problem count."""
+    lock = read_lock(out_dir)
+    if lock is None:
+        print(f"No {LOCK_FILE} in {out_dir}. Build the corpus first.")
+        return 1
+
+    expected = lock["files"]
+    actual = {p.name: file_digest(p) for p in corpus_files(out_dir)}
+
+    missing = sorted(set(expected) - set(actual))
+    extra = sorted(set(actual) - set(expected))
+    changed = sorted(n for n in set(expected) & set(actual) if expected[n] != actual[n])
+
+    for name in missing:
+        print(f"  MISSING  {name}")
+    for name in extra:
+        print(f"  EXTRA    {name}")
+    for name in changed:
+        print(f"  CHANGED  {name}")
+
+    problems = len(missing) + len(extra) + len(changed)
+    if problems:
+        print(
+            f"\n{problems} difference(s) from {LOCK_FILE} (ref {lock['ref']}, "
+            f"commit {lock['commit'][:12]}).\nRebuild with: "
+            f"python scripts/prepare_fastapi_docs.py --clean"
+        )
+    else:
+        print(
+            f"Corpus matches {LOCK_FILE}: {lock['file_count']} files, "
+            f"ref {lock['ref']} @ {lock['commit'][:12]}"
+        )
+    return problems
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Build a FastAPI docs corpus.")
     parser.add_argument("--repo", default=".cache/fastapi", help="where to clone the repo")
     parser.add_argument("--out", default="data/fastapi", help="corpus output directory")
     parser.add_argument("--clean", action="store_true", help="empty the output dir first")
+    parser.add_argument(
+        "--ref",
+        default=DEFAULT_REF,
+        help=f"upstream git tag or commit to build from (default: {DEFAULT_REF})",
+    )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help=f"check the corpus on disk against {LOCK_FILE}, then exit",
+    )
     args = parser.parse_args(argv)
 
     repo_dir = Path(args.repo).resolve()
     out_dir = Path(args.out)
 
-    clone(repo_dir)
+    if args.verify:
+        return 1 if verify(out_dir) else 0
+
+    clone(repo_dir, args.ref)
 
     docs_root = repo_dir / DOCS_SUBDIR
     if not docs_root.is_dir():
@@ -171,6 +305,11 @@ def main(argv: list[str] | None = None) -> int:
         f" | inlined {counters['inlined']} code examples"
         + (f" | {counters['missing']} includes unresolved" if counters["missing"] else "")
     )
+
+    sha = head_sha(repo_dir)
+    lock_path = write_lock(out_dir, build_lock(out_dir, args.ref, sha))
+    print(f"Locked {lock_path} to {args.ref} @ {sha[:12]}")
+
     print("\nNext:  python -m app.ingest --rebuild")
     return 0
 
