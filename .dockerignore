@@ -11,3 +11,16 @@ eval/results/
 README.md
 Dockerfile
 docker-compose.yml
+
+# Test and docs surface: not needed in the image, and keeping them out of the
+# build context makes the layer cache far less eager to invalidate.
+tests/
+conftest.py
+pytest.ini
+requirements-dev.txt
+STATE.md
+examples/
+models/
+.cache/
+.embed_cache/
+.pytest_cache/

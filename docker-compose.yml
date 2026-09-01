@@ -1,24 +1,43 @@
+# The vector store is FAISS, which runs in-process rather than as a service, so
+# what compose brings up is the app plus the volumes that hold its index and its
+# model weights. At this corpus size a network hop to a separate vector store
+# would add operational surface and buy nothing.
+#
+#   docker compose run --rm ingest     # build the index (once, and after edits)
+#   docker compose up                  # serve it
+
+x-runtime: &runtime
+  build: .
+  image: rag-doc-qa:latest
+  env_file:
+    - .env
+  volumes:
+    - ./data:/app/data:ro
+    # Read-only: the GGUF is fetched on the host with scripts/fetch_local_model.py
+    # rather than baked into the image, which would add ~2 GB to every build.
+    - ./models:/app/models:ro
+    # Named rather than bind-mounted. The container runs as uid 10001, and a
+    # bind mount would hand it a host-owned directory it cannot write.
+    - faiss_index:/app/faiss_index
+    - hf_cache:/app/.cache/huggingface
+    # Vectors are keyed by a hash of the chunk text, so a re-ingest after a
+    # chunking change only pays for what actually changed.
+    - embed_cache:/app/.embed_cache
+
 services:
   api:
-    build: .
-    image: rag-doc-qa:latest
+    <<: *runtime
     ports:
       - "8000:8000"
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data:ro
-      - ./faiss_index:/app/faiss_index
     restart: unless-stopped
 
   # One-shot ingestion:  docker compose run --rm ingest
   ingest:
-    build: .
-    image: rag-doc-qa:latest
-    env_file:
-      - .env
-    volumes:
-      - ./data:/app/data:ro
-      - ./faiss_index:/app/faiss_index
+    <<: *runtime
     command: ["python", "-m", "app.ingest", "--rebuild"]
     profiles: ["tools"]
+
+volumes:
+  faiss_index:
+  hf_cache:
+  embed_cache:

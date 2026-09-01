@@ -19,6 +19,20 @@ from app.loaders import load_directory
 from app.store import build_index, save_index
 
 
+def clear_directory(path: Path) -> None:
+    """Empty a directory without removing the directory itself.
+
+    Deleting and recreating would be simpler, but under Docker the index
+    directory *is* a mounted volume: removing it fails with EBUSY (Device or
+    resource busy), which is what `docker compose run ingest` hit.
+    """
+    for child in path.iterdir():
+        if child.is_dir() and not child.is_symlink():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Ingest documents into the FAISS index.")
     parser.add_argument("--data-dir", default=config.DATA_DIR)
@@ -35,8 +49,8 @@ def main(argv: list[str] | None = None) -> int:
 
     index_path = Path(args.index_dir)
     if args.rebuild and index_path.exists():
-        shutil.rmtree(index_path)
-        print(f"Removed existing index at {index_path}")
+        clear_directory(index_path)
+        print(f"Cleared existing index at {index_path}")
 
     started = time.time()
 
