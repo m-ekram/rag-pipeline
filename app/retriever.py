@@ -21,19 +21,39 @@ import config
 logger = logging.getLogger(__name__)
 
 
-def build_retriever(store, chunks: list[Document] | None = None, top_k: int | None = None):
+def build_retriever(
+    store,
+    chunks: list[Document] | None = None,
+    top_k: int | None = None,
+    *,
+    use_hybrid: bool | None = None,
+    mmr_lambda: float | None = None,
+    weights: tuple[float, float] | None = None,
+    fetch_k: int | None = None,
+):
+    """Build the retrieval stack. Every knob defaults to its configured value.
+
+    The keyword overrides exist for the eval harness, which needs to vary one
+    component at a time. Passing them explicitly is what keeps a variant from
+    inheriting an unrelated ambient default - the bug that made the published
+    ablation table unreproducible.
+    """
     k = top_k or config.TOP_K
+    use_hybrid = config.USE_HYBRID if use_hybrid is None else use_hybrid
+    mmr_lambda = config.MMR_LAMBDA if mmr_lambda is None else mmr_lambda
+    weights = config.HYBRID_WEIGHTS if weights is None else weights
+    fetch_k = config.FETCH_K if fetch_k is None else fetch_k
 
     dense = store.as_retriever(
         search_type="mmr",
         search_kwargs={
             "k": k,
-            "fetch_k": max(config.FETCH_K, k * 4),
-            "lambda_mult": config.MMR_LAMBDA,
+            "fetch_k": max(fetch_k, k * 4),
+            "lambda_mult": mmr_lambda,
         },
     )
 
-    if not config.USE_HYBRID or not chunks:
+    if not use_hybrid or not chunks:
         return dense
 
     try:
@@ -52,7 +72,7 @@ def build_retriever(store, chunks: list[Document] | None = None, top_k: int | No
 
     return EnsembleRetriever(
         retrievers=[dense, sparse],
-        weights=list(config.HYBRID_WEIGHTS),
+        weights=list(weights),
     )
 
 

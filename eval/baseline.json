@@ -1,0 +1,41 @@
+{
+  "corpus": {
+    "ref": "0.141.1",
+    "commit": "95f8322ee1dcda7ceace7b1c4f6c9915b36d748f",
+    "file_count": 141
+  },
+  "embedding_model": "BAAI/bge-small-en-v1.5",
+  "measured_at": "2026-09-02T04:27:54",
+  "results": [
+    {
+      "config": "baseline",
+      "label": "fixed-width chunks, no overlap, dense-only top-k",
+      "k": 5,
+      "questions": 36,
+      "chunks": 1081,
+      "hit_rate": 0.75,
+      "mrr": 0.6351851851851852,
+      "precision": 0.4277777777777778,
+      "by_tag": {
+        "exact": "12/12",
+        "multihop": "7/12",
+        "paraphrase": "8/12"
+      }
+    },
+    {
+      "config": "tuned",
+      "label": "structure-aware chunks + overlap + headers, hybrid BM25/dense, MMR off",
+      "k": 5,
+      "questions": 36,
+      "chunks": 1534,
+      "hit_rate": 0.8333333333333334,
+      "mrr": 0.699074074074074,
+      "precision": 0.46666666666666656,
+      "by_tag": {
+        "exact": "12/12",
+        "multihop": "8/12",
+        "paraphrase": "10/12"
+      }
+    }
+  ]
+}
