@@ -16,6 +16,7 @@ import json
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -67,17 +68,82 @@ app.add_middleware(
 
 
 class Turn(BaseModel):
-    role: str = Field(pattern="^(user|assistant)$")
+    role: str = Field(pattern="^(user|assistant)$", description="user or assistant")
     content: str
 
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000)
-    history: list[Turn] = Field(default_factory=list)
-    top_k: int | None = Field(default=None, ge=1, le=20)
+    history: list[Turn] = Field(
+        default_factory=list,
+        description="Prior turns. The API is stateless; history is passed per request.",
+    )
+    top_k: int | None = Field(
+        default=None, ge=1, le=20, description="Passages to retrieve. Defaults to TOP_K."
+    )
 
 
-@app.get("/health")
+class Source(BaseModel):
+    """One retrieved passage, numbered to match the [n] markers in the answer."""
+
+    n: int = Field(description="Citation number referenced in the answer text")
+    source: str = Field(description="Path relative to the corpus root")
+    title: str | None = None
+    page: int | None = Field(default=None, description="1-based page number, PDFs only")
+    chunk_id: str | None = None
+    snippet: str
+
+
+class AskResponse(BaseModel):
+    answer: str
+    sources: list[Source]
+    search_query: str = Field(
+        description="The question after history-aware rewriting; equals the "
+        "question when there is no history."
+    )
+    latency_ms: int
+
+
+class IndexMeta(BaseModel):
+    """Metadata written at ingest time, empty when no index is loaded."""
+
+    embed_provider: str | None = None
+    chat_provider: str | None = None
+    embedding_model: str | None = None
+    chunk_size: int | None = None
+    chunk_overlap: int | None = None
+    chunk_count: int | None = None
+    built_at: str | None = None
+
+
+class HealthResponse(BaseModel):
+    status: Literal["ok", "not_ready"]
+    detail: str | None = Field(default=None, description="Why the engine is not ready")
+    provider: str
+    chat_model: str
+    embedding_model: str
+    top_k: int
+    hybrid_retrieval: bool
+    index: IndexMeta
+
+
+class IndexedDocument(BaseModel):
+    source: str
+    chunks: int
+
+
+class SourcesResponse(BaseModel):
+    documents: list[IndexedDocument]
+    document_count: int
+    chunk_count: int
+
+
+class ReloadResponse(BaseModel):
+    status: Literal["ok", "not_ready"]
+    detail: str | None = None
+
+
+@app.get("/health", response_model=HealthResponse, summary="Readiness and active configuration")
 def health() -> dict:
     engine = _state["engine"]
     return {
@@ -92,7 +158,7 @@ def health() -> dict:
     }
 
 
-@app.get("/sources")
+@app.get("/sources", response_model=SourcesResponse, summary="Documents currently indexed")
 def sources() -> dict:
     engine = _engine()
     counts: dict[str, int] = {}
@@ -103,7 +169,7 @@ def sources() -> dict:
     return {"documents": documents, "document_count": len(documents), "chunk_count": len(engine.chunks)}
 
 
-@app.post("/ask")
+@app.post("/ask", response_model=AskResponse, summary="Answer a question with citations")
 async def ask(req: AskRequest) -> dict:
     engine = _engine()
     history = [t.model_dump() for t in req.history]
@@ -111,7 +177,13 @@ async def ask(req: AskRequest) -> dict:
     return await asyncio.to_thread(engine.ask, req.question, history, req.top_k)
 
 
-@app.post("/ask/stream")
+@app.post(
+    "/ask/stream",
+    summary="Same as /ask, streamed as server-sent events",
+    response_description=(
+        "text/event-stream of JSON events: {type: sources|token|replace|done|error}"
+    ),
+)
 async def ask_stream(req: AskRequest) -> StreamingResponse:
     engine = _engine()
     history = [t.model_dump() for t in req.history]
@@ -127,7 +199,7 @@ async def ask_stream(req: AskRequest) -> StreamingResponse:
     )
 
 
-@app.post("/reload")
+@app.post("/reload", response_model=ReloadResponse, summary="Re-open the index after a re-ingest")
 def reload_index() -> dict:
     """Re-open the index after a re-ingest, without restarting the process."""
     _load_engine()

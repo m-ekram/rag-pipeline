@@ -44,7 +44,7 @@ def get_embeddings():
 
 
 @functools.lru_cache(maxsize=1)
-def get_chat_model(streaming: bool = False):
+def get_chat_model():
     if config.PROVIDER == "local":
         from pathlib import Path
 
@@ -74,7 +74,8 @@ def get_chat_model(streaming: bool = False):
             model=config.CHAT_MODEL,
             temperature=config.TEMPERATURE,
             api_key=config.OPENAI_API_KEY,
-            streaming=streaming,
+            # LangChain streams through .astream() regardless of this flag.
+            streaming=True,
         )
 
     from langchain_google_genai import ChatGoogleGenerativeAI

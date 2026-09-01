@@ -8,6 +8,7 @@ runs in well under a second. The engine is injected into `api._state` instead.
 import json
 
 import pytest
+from fastapi.exceptions import ResponseValidationError
 from fastapi.testclient import TestClient
 from langchain_core.documents import Document
 
@@ -87,7 +88,8 @@ def test_health_reports_not_ready_and_says_why(client, broken_engine):
     body = response.json()
     assert body["status"] == "not_ready"
     assert "No index" in body["detail"]
-    assert body["index"] == {}
+    # The index block is now a typed model, so "empty" means every field is null.
+    assert all(value is None for value in body["index"].values())
 
 
 def test_health_always_names_the_active_models(client, engine):
@@ -233,6 +235,42 @@ def test_openapi_is_available(client, engine):
 
 
 def test_the_request_schema_is_published(client, engine):
-    """Requests are modelled; responses are not yet (see M4)."""
     schema = client.get("/openapi.json").json()
     assert "AskRequest" in schema["components"]["schemas"]
+
+
+@pytest.mark.parametrize("model", [
+    "AskResponse", "Source", "HealthResponse", "SourcesResponse", "ReloadResponse",
+])
+def test_every_response_schema_is_published(client, engine, model):
+    """These endpoints used to be annotated `-> dict`, documenting no shape at all."""
+    assert model in client.get("/openapi.json").json()["components"]["schemas"]
+
+
+@pytest.mark.parametrize("path,method", [
+    ("/ask", "post"), ("/health", "get"), ("/sources", "get"), ("/reload", "post"),
+])
+def test_each_endpoint_declares_its_response_shape(client, engine, path, method):
+    schema = client.get("/openapi.json").json()
+    content = schema["paths"][path][method]["responses"]["200"]["content"]
+    assert content["application/json"]["schema"].get("$ref")
+
+
+def test_the_streaming_endpoint_documents_its_event_types(client, engine):
+    schema = client.get("/openapi.json").json()
+    description = schema["paths"]["/ask/stream"]["post"]["responses"]["200"]["description"]
+    assert "event-stream" in description
+
+
+def test_the_answer_is_validated_against_the_schema(client, engine, monkeypatch):
+    """A malformed engine response must fail loudly rather than reach the client."""
+    monkeypatch.setattr(engine, "ask", lambda *a, **k: {"answer": "no other fields"})
+    with pytest.raises(ResponseValidationError):
+        client.post("/ask", json={"question": "hello there"})
+
+
+def test_unknown_fields_are_stripped_from_the_response(client, engine, monkeypatch):
+    payload = dict(ANSWER, internal_debug_state="should not be exposed")
+    monkeypatch.setattr(engine, "ask", lambda *a, **k: payload)
+    body = client.post("/ask", json={"question": "hello there"}).json()
+    assert "internal_debug_state" not in body
