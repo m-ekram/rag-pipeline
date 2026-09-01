@@ -1,5 +1,6 @@
 .env
 faiss_index/
+samples_index/
 __pycache__/
 *.py[cod]
 .venv/
