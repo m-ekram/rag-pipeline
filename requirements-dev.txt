@@ -1,0 +1,9 @@
+# Development / test dependencies.
+#
+# Kept separate from requirements.txt so the Docker runtime image, which
+# installs only requirements.txt, does not carry the test stack.
+#
+#   pip install -r requirements-dev.txt
+#   pytest
+
+pytest>=8.0.0

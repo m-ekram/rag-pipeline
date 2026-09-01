@@ -7,7 +7,6 @@ __pycache__/
 *.py[cod]
 faiss_index/
 data/*
-!data/samples/
 eval/results/
 README.md
 Dockerfile
