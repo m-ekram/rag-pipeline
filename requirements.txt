@@ -1,0 +1,18 @@
+# Pinned to the versions the venv was built with — the eval numbers this project
+# reports are only reproducible if the retrieval/embedding stack is fixed.
+fastapi==0.141.1
+uvicorn==0.52.4
+anthropic==1.0.0
+qdrant-client==1.19.0
+sentence-transformers==6.0.0
+rank-bm25==0.2.2
+pandas==3.0.5
+pytest==9.1.1
+beir==2.2.0
+python-dotenv==1.2.3
+httpx==0.28.1
+pypdf==6.16.2
+beautifulsoup4==4.15.0
+pymupdf==1.25.3
+paddleocr>=2.9.0
+paddlepaddle>=2.6.0

@@ -1,0 +1,56 @@
+# Virtual Environment
+ragenv311/
+venv/
+env/
+.venv/
+lib/
+lib64/
+bin/
+include/
+
+# Caches and Compiled Files
+**/__pycache__/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+.cache/
+data/cache/
+.pytest_cache/
+.pytest_tmp/
+
+# Heavy PDF data & DBs
+*.pdf
+data/
+*.db
+*.sqlite
+*.sqlite3
+indexes/
+qdrant_storage/
+results/
+
+# Temporary diagnostic & test scrap scripts (root only)
+/test_*.py
+/read_*.py
+/find_*.py
+/check_*.py
+/purge_*.py
+/diagnose_*.py
+/inspect_*.py
+/benchmark_*.py
+/run_benchmark.py
+doc_v4_*
+scratch/
+
+# Images and logs
+page*.png
+clean*.png
+benchmark*.png
+*.png
+*.jpg
+*.jpeg
+*.log
+
+# Environment variables & secrets
+.env
+*.key
