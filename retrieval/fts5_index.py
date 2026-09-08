@@ -21,8 +21,8 @@ from .types import ScoredChunk
 
 logger = logging.getLogger(__name__)
 
-# Token pattern: matches letters, digits, and characters like / - _ .
-_TOKEN_PATTERN = re.compile(r"[\w\u0300-\u1B00/_\-.]+", re.UNICODE)
+# Token pattern: matches letters, digits, and characters like / - _ . *
+_TOKEN_PATTERN = re.compile(r"[\w\u0300-\u1B00/_\-.*]+", re.UNICODE)
 
 
 class FTS5Index:
@@ -98,10 +98,10 @@ class FTS5Index:
         # Quote tokens containing slashes, dashes, or special chars
         formatted = []
         for t in tokens:
-            cleaned = t.strip("./-_")
+            cleaned = t.strip("./-_*")
             if not cleaned:
                 continue
-            if any(ch in t for ch in "/-_."):
+            if any(ch in t for ch in "/-_.") and not t.endswith("*"):
                 formatted.append(f'"{t}"')
             else:
                 formatted.append(t)

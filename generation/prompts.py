@@ -36,7 +36,8 @@ CRITICAL CITATION RULES:
 4. If information is missing from the provided sources, state exactly: INSUFFICIENT_EVIDENCE.
 5. Answer in the language of the question. If the evidence is in another language (such as Hindi/Devanagari), comprehend and extract the facts from the evidence accurately into your answer.
 6. Do not guess. Do not speculate. Do not apologise or explain your reasoning.
-7. Keep the answer under 120 words."""
+7. Keep the answer under 120 words.
+8. In electoral roll records formatted as - [Serial: ... | EPIC: ... | Voter: ... | Relation: ... | House: ... | Age: ... | Gender: ...], each line corresponds strictly to one person. NEVER mix or combine fields from different voter lines."""
 
 ABSTAIN_TOKEN = "INSUFFICIENT_EVIDENCE"
 

@@ -38,3 +38,17 @@ def test_router_classification():
 
     intent, params = router.classify("What are the land use guidelines for residential areas?")
     assert intent == QueryIntent.HYBRID_SEMANTIC
+
+
+def test_router_exact_entity_prefix_fallback(tmp_path):
+    db_path = tmp_path / "test_fts.db"
+    fts = FTS5Index(db_path=db_path)
+    c = Chunk(chunk_id="c1", doc_id="d1", text="- [Serial: 36 | EPIC: SHS5124394 | Voter: कशिश कश्यप]", ordinal=0)
+    fts.build([c])
+
+    router = IntentRouter(lexical=fts, dense=None)
+    # Query with SHS5124391 (ending in 1 instead of 4 due to OCR variance)
+    results = router.retrieve("What are the details of voter id SHS5124391?")
+    assert len(results) >= 1
+    assert results[0].chunk_id == "c1"
+    assert "कशिश कश्यप" in results[0].chunk.text

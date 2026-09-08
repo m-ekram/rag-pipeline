@@ -101,16 +101,33 @@ def extract_header_context(lines: list[str]) -> str:
     return " | ".join(header_parts)
 
 
+def normalize_epic_id(raw_epic: str) -> str:
+    """Normalize OCR character confusions in EPIC numbers (e.g. SHS5I24394 -> SHS5124394)."""
+    clean = re.sub(r"[\s|\]\[‘'._]+", "", raw_epic).strip()
+    m = re.match(r"^([A-Z]{2,4})(.*)$", clean)
+    if m:
+        pref, digits = m.groups()
+        digits_norm = (
+            digits.replace("I", "1")
+            .replace("l", "1")
+            .replace("|", "1")
+            .replace("O", "0")
+            .replace("o", "0")
+            .replace("D", "0")
+            .replace("S", "5")
+            .replace("s", "5")
+            .replace("B", "8")
+            .replace("Z", "2")
+        )
+        return pref + digits_norm
+    return clean
+
+
 def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
     """Parse raw OCR text from a voter grid page into atomic VoterRecords.
 
-    Uses row-based segmentation: an electoral page consists of stacked rows
-    of 1 to 3 voter cards. Segmenting lines into local row blocks bounds
-    any OCR-dropped field strictly to that row, completely preventing
-    off-by-N field shifts from cascading down the page.
-
-    Returns:
-        (header_context, list_of_records)
+    Handles both single-voter vertical streams and multi-voter horizontal row bands.
+    Disassembles stacked row lines across 3 columns into clean atomic records.
     """
     if not is_electoral_text(text):
         return "", []
@@ -131,13 +148,13 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
     cur_has_data = False
 
     for l in body_lines:
+        m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])(\d{1,4})\s*[|\]\[:]\s*([^|\]\[\n]+)", l)
+        is_serial_line = len(m_hdrs) >= 2 or (len(m_hdrs) == 1 and int(m_hdrs[0][0]) < 2500)
         m_ser = SERIAL_RE.search(l)
-        is_serial = bool(m_ser and int(m_ser.group(1)) < 2500 and len(m_ser.group(1)) <= 4)
+        is_single_serial = bool(m_ser and int(m_ser.group(1)) < 2500 and len(m_ser.group(1)) <= 4)
         is_epic = bool(EPIC_RE.search(l))
 
-        # A new row starts when we encounter a serial or EPIC *after* having already
-        # collected voter details (name/house/age/etc.) in the current row.
-        if (is_serial or is_epic) and cur_has_data:
+        if (is_serial_line or is_single_serial or is_epic) and cur_has_data:
             rows.append(cur_row)
             cur_row = []
             cur_has_data = False
@@ -159,40 +176,68 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
         r_age_gens: list[tuple[str, str]] = []
 
         for line in r:
+            # 1. Card headers (Serial & EPIC)
+            m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])(\d{1,4})\s*[|\]\[:]\s*([^|\]\[\n]+)", line)
+            if len(m_hdrs) >= 1 and int(m_hdrs[0][0]) < 2500:
+                for s, ep in m_hdrs:
+                    r_serials.append(s.strip())
+                    clean_ep = normalize_epic_id(ep)
+                    if clean_ep:
+                        r_epics.append(clean_ep)
+                continue
+
+            # Fallback single serial / EPIC
             m_ser = SERIAL_RE.search(line)
             m_ep = EPIC_RE.search(line)
-            m_rel = REL_RE.search(line)
-            m_ag = AGE_GEN_RE.search(line)
-
             if m_ep:
-                r_epics.append(m_ep.group(1).strip())
+                r_epics.append(normalize_epic_id(m_ep.group(1).strip()))
             elif m_ser and int(m_ser.group(1)) < 2500 and len(m_ser.group(1)) <= 4:
                 r_serials.append(m_ser.group(1).strip())
-            elif m_rel:
+
+            # 2. Multi-name split across columns
+            if "नाम" in line and any(k in line for k in ["निर्वाचक", "Prater", "Brae"]):
+                splits = [n.strip(" .हु|:：") for n in re.split(r"(?:नि[र्वा]+[च|ं|ि|क|्]+|Prater|Brae)\s*का\s*(?:नाम|ee)\s*[:：]?", line) if n.strip(" .हु|:：")]
+                for nm in splits:
+                    clean_nm = re.sub(r"^(?:का\s*नाम|नाम)\s*[:：]?\s*", "", nm).strip(" .हु|:：")
+                    if clean_nm:
+                        r_names.append(clean_nm)
+                continue
+
+            # 3. Multi-relation split across columns
+            if any(k in line for k in ["पिता", "पति", "माता"]):
+                rel_types = re.findall(r"(पिता|पति|पतिका|माता|अन्य)(?:\s*का)?\s*ना[मप्र]+\s*[:：]+", line)
+                rel_names = [rn.strip(" .हु|:：") for rn in re.split(r"(?:पिता|पति|पतिका|माता|अन्य)(?:\s*का)?\s*ना[मप्र]+\s*[:：]+", line) if rn.strip(" .हु|:：")]
+                if rel_types and rel_names:
+                    for t, rn in zip(rel_types, rel_names):
+                        norm_t = "पति" if t == "पतिका" else t
+                        r_rels.append(f"{norm_t}: {rn}")
+                    continue
+
+            # Fallback single relation
+            m_rel = REL_RE.search(line)
+            if m_rel:
                 rel_type = m_rel.group(1).strip()
                 if rel_type == "पतिका":
                     rel_type = "पति"
                 r_rels.append(f"{rel_type}: {m_rel.group(2).strip()}")
-            elif "मकान" in line:
-                matches = HOUSE_NO_PATTERN.findall(line)
-                if matches:
-                    for m in matches:
-                        clean_m = m.strip()
-                        if clean_m:
-                            r_houses.append(clean_m)
-                else:
-                    h_val = re.sub(r"^.*?मकान\s*[^:\d०-९A-Za-z]*[:：]?\s*", "", line)
-                    h_val = re.sub(r"(?:फोटो\s*उपलब्ध|फोटो|उपलब्ध|[|]).*$", "", h_val).strip()
-                    if h_val:
-                        r_houses.append(h_val)
-            elif m_ag:
-                r_age_gens.append((m_ag.group(1).strip(), m_ag.group(2).strip()))
-            elif "नाम" in line and not any(k in line for k in ["विधानसभा", "भाग", "अनुभाग", "लोकसभा"]):
-                v_name = re.sub(r"^.*?नाम\s*[:：]?\s*", "", line).strip()
-                if v_name:
-                    r_names.append(v_name)
 
-        n_voters = max(len(r_epics), len(r_names))
+            # 4. Multi-house split across columns
+            if any(k in line for k in ["मकान", "प्रकान", "भकान"]):
+                splits = [re.sub(r"(?:फोटो\s*उपलब्ध|फोटो|उपलब्ध|[|.]).*", "", h).strip(" :：") for h in re.split(r"(?:मकान|प्रकान|भकान)\s*(?:संख्या|संयम|संकया|संया|नं|क्र)\s*[:：]?", line) if h.strip()]
+                if splits:
+                    for h in splits:
+                        clean_h = h.strip()
+                        if clean_h:
+                            r_houses.append(clean_h)
+                    continue
+
+            # 5. Multi-age/gender split across columns
+            m_ag = re.findall(r"([0-9०-९]{1,3})\s*[^0-9०-९\n]{1,15}?(महिला|पुरु[ष|थ|स]|अन्य)", line)
+            if m_ag:
+                for ag, gn in m_ag:
+                    r_age_gens.append((ag.strip(), gn.strip()))
+
+        n_voters = max(len(r_epics), len(r_names), len(r_serials), len(r_age_gens))
         for i in range(n_voters):
             rec_ser = r_serials[i] if i < len(r_serials) else ""
             rec_epic = r_epics[i] if i < len(r_epics) else ""
@@ -216,3 +261,4 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
             )
 
     return header_ctx, records
+

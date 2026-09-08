@@ -83,6 +83,10 @@ class IntentRouter:
             entity_id = params["entity_id"]
             logger.info("Routing query to EXACT_ENTITY for ID '%s'", entity_id)
             lexical_hits = self.lexical.search(entity_id, limit=self.candidate_limit)
+            if not lexical_hits and len(entity_id) >= 6:
+                prefix_query = entity_id[:-1] + "*"
+                logger.info("Exact ID miss. Trying prefix search: '%s'", prefix_query)
+                lexical_hits = self.lexical.search(prefix_query, limit=self.candidate_limit)
             if lexical_hits:
                 candidates = lexical_hits
             else:
