@@ -32,6 +32,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from generation.abstention import Decision, ThresholdGate
 from generation.citations import render_citations
+from console import use_utf8_console
 from generation.llm import GroqBackend, OllamaBackend, get_llm
 from generation.pipeline import RAGPipeline
 from ingestion.chunking import (
@@ -129,6 +130,7 @@ def build_pipeline(
     backend: Optional[str] = "auto",
     model: Optional[str] = None,
     reindex: bool = False,
+    qdrant_client=None,
 ) -> RAGPipeline:
     """Build chunks, indexes, retriever, and RAGPipeline."""
     has_electoral = any(is_electoral_text(d.text) for d in docs)
@@ -150,7 +152,9 @@ def build_pipeline(
 
     print(f"[*] Connecting to Qdrant ({collection_name})...")
     embedder = Embedder("intfloat/multilingual-e5-small")
-    dense = DenseIndex(collection_name, embedder=embedder)
+    # An explicit client lets callers use embedded/on-disk Qdrant when no
+    # server is running — a desktop app should not require Docker.
+    dense = DenseIndex(collection_name, embedder=embedder, client=qdrant_client)
 
     already_indexed = False
     if dense.client.collection_exists(collection_name):
@@ -226,7 +230,7 @@ def build_pipeline(
         llm = get_llm(chosen_backend, model=model)
 
     print(f"[+] Pipeline ready! Using LLM: {llm.name} ({llm.model})")
-    return RAGPipeline(
+    pipeline = RAGPipeline(
         retriever=retriever,
         gate=gate,
         reranker=reranker,
@@ -236,6 +240,17 @@ def build_pipeline(
         evidence_token_budget=1200,
         max_answer_tokens=250,
     )
+
+    # Load the model now rather than inside the first question. A cold Ollama
+    # pays a multi-GB weight load on its first request; leaving that inside the
+    # request means the read timeout has to cover it, which is what produced
+    # httpx.ReadTimeout on the first question.
+    if hasattr(llm, "warmup"):
+        print(f"[*] Warming up {llm.model} (loading weights)...")
+        seconds = pipeline.warmup()
+        print(f"[+] Model resident in {seconds:.1f}s.")
+
+    return pipeline
 
 
 def query_and_print(pipeline: RAGPipeline, question: str, stream: bool = True):
@@ -298,6 +313,7 @@ def query_and_print(pipeline: RAGPipeline, question: str, stream: bool = True):
 
 
 def main():
+    use_utf8_console()
     parser = argparse.ArgumentParser(description="Query any document using the RAG pipeline.")
     parser.add_argument("document", type=str, help="Path to document file (.pdf, .txt, .md)")
     parser.add_argument("-q", "--query", type=str, default=None, help="Single query to run")
@@ -315,8 +331,14 @@ def main():
     parser.add_argument("--overlap", type=int, default=40, help="Chunk overlap in words")
     parser.add_argument("--max-pages", type=int, default=None, help="Limit number of pages to process from PDF (useful for quick testing)")
     parser.add_argument("--workers", type=int, default=1, help="Number of OCR worker processes (default: 1 sequential)")
+    parser.add_argument("--ocr-engine", choices=["auto", "paddle", "tesseract"], default="auto", help="OCR engine to use (default: auto)")
 
     args = parser.parse_args()
+    if args.ocr_engine == "paddle":
+        os.environ["ENABLE_PADDLEOCR"] = "1"
+    elif args.ocr_engine == "tesseract":
+        os.environ["ENABLE_PADDLEOCR"] = "0"
+
     if args.groq_key:
         os.environ["GROQ_API_KEY"] = args.groq_key.strip()
 

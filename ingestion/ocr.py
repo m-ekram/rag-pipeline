@@ -1,5 +1,7 @@
 import logging
 import os
+import platform
+import sys
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,6 +64,70 @@ def remove_table_grid_lines(image: Image.Image) -> Image.Image:
         return image
 
 
+# Recognition model per language. Devanagari covers Hindi and Marathi; the
+# Latin model handles English and transliterated text.
+_REC_MODELS = {
+    "hi": "devanagari_PP-OCRv5_mobile_rec",
+    "hin": "devanagari_PP-OCRv5_mobile_rec",
+    "mr": "devanagari_PP-OCRv5_mobile_rec",
+    "en": "en_PP-OCRv5_mobile_rec",
+}
+
+
+class NoOCREngineAvailable(RuntimeError):
+    """Neither PaddleOCR nor Tesseract can run.
+
+    Raised instead of returning empty text: a silent 0-character page looks
+    exactly like a blank scan, so a broken install used to surface as
+    "No text could be extracted" with no indication of why.
+    """
+
+
+def _run_paddle(engine, img_np) -> tuple[str, list[float]]:
+    """Call PaddleOCR across the 2.x and 3.x APIs.
+
+    PaddleOCR 3.x removed `ocr(img, cls=...)` in favour of `predict(img)`, which
+    returns per-page dicts with `rec_texts` / `rec_scores`. Calling the 2.x form
+    against 3.x raises `unexpected keyword argument 'cls'`, which was being
+    swallowed into an empty page.
+    """
+    predict = getattr(engine, "predict", None)
+    if predict is not None:
+        texts: list[str] = []
+        scores: list[float] = []
+        for item in predict(img_np) or []:
+            data = getattr(item, "json", None)
+            data = data() if callable(data) else data
+            if not isinstance(data, dict):
+                continue
+            payload = data.get("res", data)
+            texts.extend(str(t) for t in payload.get("rec_texts", []) if str(t).strip())
+            for value in payload.get("rec_scores", []):
+                try:
+                    scores.append(float(value))
+                except (TypeError, ValueError):
+                    pass
+        if texts:
+            return "\n".join(texts).strip(), scores
+
+    legacy = getattr(engine, "ocr", None)
+    if legacy is not None:
+        result = legacy(img_np, cls=False)
+        if result and result[0]:
+            lines, scores = [], []
+            for line in result[0]:
+                if line and line[1]:
+                    lines.append(line[1][0])
+                    if len(line[1]) > 1:
+                        try:
+                            scores.append(float(line[1][1]))
+                        except (TypeError, ValueError):
+                            pass
+            return "\n".join(lines).strip(), scores
+
+    return "", []
+
+
 class RobustPaddleOCREngine:
     """Production Engine for ARM64 CPU:
     - Tier 1: PaddleOCR v4 (Lightweight CNN, ~1.2s/page, high Hindi precision)
@@ -79,24 +145,58 @@ class RobustPaddleOCREngine:
         self.extra_kwargs = kwargs
         self.ocr = None
         self._loaded = False
+        self._last_scores: list[float] = []
+        self._engine_used = ""
+        self._engine_checked = False
         # On Ubuntu 24.04 ARM64, paddlepaddle 3.x has a known glibc std::filesystem C++ ABI segfault.
         # We enable Paddle only if explicitly requested, otherwise default to rock-solid Tesseract.
         # For Urdu, always use Tesseract (with installed tesseract-ocr-urd).
-        self.paddle_available = os.environ.get("ENABLE_PADDLEOCR", "0") == "1" and self.lang != "urd"
+        # paddlepaddle 3.x segfaults on Ubuntu ARM64 (glibc std::filesystem ABI),
+        # so it is disabled there by default and enabled everywhere else —
+        # defaulting to off globally silently broke macOS and Windows, where
+        # PaddleOCR is the only working engine unless Tesseract is installed.
+        known_bad = sys.platform.startswith("linux") and platform.machine().lower() in (
+            "aarch64", "arm64",
+        )
+        override = os.environ.get("ENABLE_PADDLEOCR")
+        default_on = not known_bad
+        self.paddle_available = (
+            (override == "1") if override is not None else default_on
+        ) and self.lang != "urd"
 
     def _lazy_load(self):
         if not self._loaded and self.paddle_available and self.lang != "urd":
             try:
                 from paddleocr import PaddleOCR
 
+                # Benchmarked configuration. Measured on the Bihar electoral
+                # rolls: mobile detection + Devanagari mobile recognition with
+                # the three document-analysis pipelines disabled runs ~6s/page
+                # at ~0.95 confidence. The generic PP-OCRv4 defaults enable
+                # doc-orientation, unwarping and textline-orientation and load
+                # server-size detection, which measured 144-195s/page at
+                # 0.46-0.77 — roughly 25x slower AND less accurate.
                 try:
                     self.ocr = PaddleOCR(
                         lang=self.lang,
-                        ocr_version="PP-OCRv4",
+                        text_detection_model_name="PP-OCRv5_mobile_det",
+                        text_recognition_model_name=_REC_MODELS.get(
+                            self.lang, "devanagari_PP-OCRv5_mobile_rec"
+                        ),
+                        use_doc_orientation_classify=False,
+                        use_doc_unwarping=False,
+                        use_textline_orientation=False,
                         text_det_unclip_ratio=self.text_det_unclip_ratio,
                     )
-                except Exception:
-                    self.ocr = PaddleOCR(lang=self.lang)
+                except Exception as exc:
+                    logger.warning(
+                        "Benchmarked OCR config unavailable (%s); falling back to "
+                        "PaddleOCR defaults — expect substantially slower pages.", exc
+                    )
+                    try:
+                        self.ocr = PaddleOCR(lang=self.lang)
+                    except Exception:
+                        self.ocr = PaddleOCR()
                 self._loaded = True
             except Exception as e:
                 logger.warning("PaddleOCR init failed: %s. Using Tesseract.", e)
@@ -115,12 +215,11 @@ class RobustPaddleOCREngine:
                 self._lazy_load()
                 if self._loaded and self.ocr is not None:
                     img_np = np.array(clean_image.convert("RGB"))
-                    result = self.ocr.ocr(img_np, cls=False)
-                    if result and result[0]:
-                        lines = [line[1][0] for line in result[0] if line and line[1]]
-                        text = "\n".join(lines).strip()
-                        if text:
-                            return text
+                    text, scores = _run_paddle(self.ocr, img_np)
+                    if text:
+                        self._last_scores = scores
+                        self._engine_used = "paddleocr"
+                        return text
             except Exception as e:
                 logger.warning("[!] PaddleOCR error: %s. Falling back to Tier 2 (Tesseract)...", e)
 
@@ -136,6 +235,15 @@ class RobustPaddleOCREngine:
                 tess_lang = "eng"
             text = pytesseract.image_to_string(clean_image, lang=tess_lang, config="--psm 6")
             return text.strip()
+        except ImportError as exc:
+            # No Paddle (or it failed) AND no Tesseract: every page would return
+            # "" and the caller would report an empty document with no cause.
+            raise NoOCREngineAvailable(
+                "No usable OCR engine. PaddleOCR is unavailable or failed, and "
+                "pytesseract is not installed. Install one of:\n"
+                "  pip install paddleocr paddlepaddle   (then ENABLE_PADDLEOCR=1)\n"
+                "  pip install pytesseract  +  the tesseract binary"
+            ) from exc
         except Exception as e:
             logger.warning("[!] Tesseract fallback error: %s", e)
             return ""
@@ -150,11 +258,19 @@ class RobustPaddleOCREngine:
             with Image.open(image_path) as img:
                 img_rgb = img.convert("RGB")
                 text = self.extract_text(img_rgb)
-                engine_name = "tesseract-native" if (not self._loaded or self.lang == "urd") else "paddleocr-v4"
+                engine_name = self._engine_used or (
+                    "tesseract-native" if (not self._loaded or self.lang == "urd")
+                    else "paddleocr"
+                )
+                # Real mean recognition score when the engine reports one. The
+                # previous constant 0.90 was fabricated: it made a broken engine
+                # look confident and corrupted any reported OCR confidence.
+                scores = self._last_scores
+                confidence = (sum(scores) / len(scores)) if scores else (0.0 if not text else None)
                 return OCRResult(
                     text=text,
                     page=page,
-                    confidence=0.90 if text else 0.0,
+                    confidence=confidence,
                     engine=engine_name,
                 )
         except Exception as e:

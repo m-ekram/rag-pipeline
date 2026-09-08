@@ -273,3 +273,36 @@ def test_linearize_electoral_summary_table():
     # Test 3: Plain text without summary keywords returns unchanged
     plain = "This is a random document text with no electoral summary."
     assert linearize_electoral_summary_table(plain) == plain
+
+
+def test_multi_column_row_parsing_kashish_kashyap():
+    page4_snippet = """
+विधानसभा निर्वाचन क्षेत्र की संख्या एवं नाम : 183-कुम्हरार
+भाग संख्या : : 61
+अनुभाग संख्या एवं नाम : 1-राजेंद्र नगर
+‘ | 34 | 8094926432...। | 35| 8084926440... ] 36| SHS5I24394
+निर्वाचक का नाम : अजय कुमार गुप्ता हु निर्वाचक का नाम : श्रेष्ठा राज हु निर्वाचक का नाम: कशिश कश्यप .
+पिता का नाम:: अखिला नंद प्रसाद पिता का नाम:: अजय कुमार गुप्ता पति का नाम: अनिमेश कश्यप
+मकान संख्या : 402 फोटो उपलब्ध... मकान संयम: 402 फोटो उपलब्ध... मकान संकया : 402-403,हैम छठ धाम जपार्टमेंट. फोदो उपलब्ध
+उप्र : 63 लिंग: : पुरुष Wa: 27 लिंग: : महिला उम्र ; 23 लिंग; : महिला
+"""
+    header, records = parse_electoral_records(page4_snippet)
+    assert len(records) == 3
+
+    # Voter 3 is Kashish Kashyap
+    r3 = records[2]
+    assert r3.serial == "36"
+    assert r3.epic == "SHS5124394"  # Normalized 'I' to '1'
+    assert r3.name == "कशिश कश्यप"
+    assert "पति: अनिमेश कश्यप" in r3.relation
+    assert "402-403" in r3.house
+    assert r3.age == "23"
+    assert "महिला" in r3.gender
+    assert "कशिश कश्यप (Kashish Kashyap)" in r3.to_markdown()
+
+
+def test_transliteration_dual_script():
+    v = VoterRecord(serial="10", epic="SHS4590493", name="फ़राज़ अहमद", house="4", age="28", gender="पुरुष")
+    md = v.to_markdown()
+    assert "Voter: फ़राज़ अहमद (Faraz Ahmad)" in md
+

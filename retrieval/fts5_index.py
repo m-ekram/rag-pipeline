@@ -21,8 +21,8 @@ from .types import ScoredChunk
 
 logger = logging.getLogger(__name__)
 
-# Token pattern: matches letters, digits, and characters like / - _ .
-_TOKEN_PATTERN = re.compile(r"[\w\u0300-\u1B00/_\-.]+", re.UNICODE)
+# Token pattern: matches letters, digits, and characters like / - _ . *
+_TOKEN_PATTERN = re.compile(r"[\w\u0300-\u1B00/_\-.*]+", re.UNICODE)
 
 
 class FTS5Index:
@@ -98,10 +98,10 @@ class FTS5Index:
         # Quote tokens containing slashes, dashes, or special chars
         formatted = []
         for t in tokens:
-            cleaned = t.strip("./-_")
+            cleaned = t.strip("./-_*")
             if not cleaned:
                 continue
-            if any(ch in t for ch in "/-_."):
+            if any(ch in t for ch in "/-_.") and not t.endswith("*"):
                 formatted.append(f'"{t}"')
             else:
                 formatted.append(t)
@@ -188,6 +188,64 @@ class FTS5Index:
             chunks.append(Chunk(**chunk_kwargs))
         return chunks
 
+    def fuzzy_search_epic(
+        self, target_epic: str, max_distance: int = 2, limit: int = 5
+    ) -> list[ScoredChunk]:
+        """Fuzzy search across voter chunks for EPIC IDs with up to max_distance edit distance."""
+        clean_target = re.sub(r"[^A-Za-z0-9]", "", target_epic).upper()
+        if len(clean_target) < 6:
+            return []
+
+        cursor = self.con.execute(
+            "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE '%EPIC:%'"
+        )
+        rows = cursor.fetchall()
+
+        matches = []
+        for cid, text, meta_json in rows:
+            epics = re.findall(r"EPIC:\s*([A-Za-z0-9/]+)", text)
+            best_dist = 999
+            for ep in epics:
+                clean_ep = re.sub(r"[^A-Za-z0-9]", "", ep).upper()
+                if abs(len(clean_ep) - len(clean_target)) > max_distance:
+                    continue
+                dist = _levenshtein(clean_target, clean_ep)
+                if dist < best_dist:
+                    best_dist = dist
+
+            if best_dist <= max_distance:
+                payload = json.loads(meta_json) if meta_json else {}
+                chunk_fields = {f for f in Chunk.__dataclass_fields__}
+                chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
+                chunk_kwargs.setdefault("chunk_id", cid)
+                chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
+                chunk_kwargs.setdefault("text", text)
+                chunk_kwargs.setdefault("ordinal", 0)
+                chunk = Chunk(**chunk_kwargs)
+                score = 1.0 - (best_dist * 0.05)
+                matches.append((best_dist, ScoredChunk(chunk_id=cid, score=score, rank=1, chunk=chunk)))
+
+        matches.sort(key=lambda x: x[0])
+        return [m[1] for m in matches[:limit]]
+
     def close(self) -> None:
         """Close SQLite connection."""
         self.con.close()
+
+
+def _levenshtein(s1: str, s2: str) -> int:
+    """Compute Levenshtein edit distance between two strings."""
+    if len(s1) < len(s2):
+        return _levenshtein(s2, s1)
+    if len(s2) == 0:
+        return len(s1)
+    previous_row = list(range(len(s2) + 1))
+    for i, c1 in enumerate(s1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(s2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]

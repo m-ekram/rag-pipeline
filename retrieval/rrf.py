@@ -28,19 +28,23 @@ def reciprocal_rank_fusion(
     scores: dict[str, float] = {}
     chunk_map: dict[str, ScoredChunk] = {}
 
-    for item in dense_results:
-        cid = item.chunk_id
-        chunk_map[cid] = item
-        scores[cid] = scores.get(cid, 0.0) + (1.0 / (k + item.rank))
-
-    for item in lexical_results:
-        cid = item.chunk_id
-        if cid not in chunk_map:
-            chunk_map[cid] = item
-        scores[cid] = scores.get(cid, 0.0) + (1.0 / (k + item.rank))
+    for results in (dense_results, lexical_results):
+        # Rank comes from list position, never from item.rank. ScoredChunk.rank
+        # defaults to 0, so a retriever that forgets to set it would give every
+        # result 1/(k+0) — identical scores, and the ranking silently collapses
+        # to insertion order.
+        for position, item in enumerate(results, 1):
+            cid = item.chunk_id
+            scores[cid] = scores.get(cid, 0.0) + (1.0 / (k + position))
+            # Keep whichever copy actually carries the chunk payload: a dense hit
+            # whose Qdrant payload was missing would otherwise overwrite a
+            # lexical hit that has the text, and the evidence vanishes downstream.
+            if cid not in chunk_map or chunk_map[cid].chunk is None:
+                chunk_map[cid] = item
 
     # Sort descending by fused RRF score
-    sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:limit]
+    # Tie-break on chunk_id so fusion output is deterministic across runs.
+    sorted_items = sorted(scores.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
 
     merged: list[ScoredChunk] = []
     for rank, (cid, fused_score) in enumerate(sorted_items, 1):

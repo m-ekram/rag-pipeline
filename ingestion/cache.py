@@ -115,6 +115,14 @@ class ExtractionCache:
     def put(self, key: str, value: dict[str, Any]) -> None:
         if not self.enabled:
             return
+        # Never store an empty extraction. A genuinely blank page is cheap to
+        # redo, but an empty result produced by a broken OCR engine would be
+        # served from cache forever: the transient failure becomes permanent,
+        # and re-running after the fix silently returns nothing. Guarding here
+        # rather than at each call site covers every writer.
+        if isinstance(value, dict) and not str(value.get("text", "")).strip():
+            logger.debug("Refusing to cache empty extraction for %s", key[:12])
+            return
         path = self._path_for(key)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         entry = {"version": CACHE_VERSION, "written_at": time.time(), "value": value}
