@@ -59,7 +59,11 @@ class VoterRecord:
         if self.epic:
             parts.append(f"EPIC: {self.epic}")
         if self.name:
-            parts.append(f"Voter: {self.name}")
+            latin = transliterate_devanagari(self.name)
+            if latin and latin.lower() != self.name.lower():
+                parts.append(f"Voter: {self.name} ({latin})")
+            else:
+                parts.append(f"Voter: {self.name}")
         if self.relation:
             parts.append(f"Relation: {self.relation}")
         if self.house:
@@ -121,6 +125,101 @@ def normalize_epic_id(raw_epic: str) -> str:
         )
         return pref + digits_norm
     return clean
+
+
+_VOWELS = {
+    'अ': 'a', 'आ': 'aa', 'इ': 'i', 'ई': 'ee', 'उ': 'u', 'ऊ': 'oo',
+    'ऋ': 'ri', 'ए': 'e', 'ऐ': 'ai', 'ओ': 'o', 'औ': 'au', 'अं': 'an', 'अः': 'ah'
+}
+
+_MATRAS = {
+    'ा': 'a', 'ि': 'i', 'ी': 'ee', 'ु': 'u', 'ू': 'oo',
+    'ृ': 'ri', 'े': 'e', 'ै': 'ai', 'ो': 'o', 'ौ': 'au',
+    'ं': 'n', 'ँ': 'n', 'ः': 'h', '़': ''
+}
+
+_CONSONANTS = {
+    'क': 'k', 'ख': 'kh', 'ग': 'g', 'घ': 'gh', 'ङ': 'ng',
+    'च': 'ch', 'छ': 'chh', 'ज': 'j', 'झ': 'jh', 'ञ': 'ny',
+    'ट': 't', 'ठ': 'th', 'ड': 'd', 'ढ': 'dh', 'ण': 'n',
+    'त': 't', 'थ': 'th', 'द': 'd', 'ध': 'dh', 'न': 'n',
+    'प': 'p', 'फ': 'ph', 'ब': 'b', 'भ': 'bh', 'म': 'm',
+    'य': 'y', 'र': 'r', 'ल': 'l', 'व': 'v',
+    'श': 'sh', 'ष': 'sh', 'स': 's', 'ह': 'h',
+    'क़': 'q', 'ख़': 'kh', 'ग़': 'gh', 'ज़': 'z', 'ड़': 'r', 'ढ़': 'rh',
+    'फ़': 'f', 'य़': 'y', 'क्ष': 'ksh', 'त्र': 'tr', 'ज्ञ': 'gy'
+}
+
+_NAME_OVERRIDES = {
+    "फ़राज़": "Faraz", "फराज": "Faraz", "फेराक": "Faraz",
+    "अहमद": "Ahmad", "अहमद्": "Ahmad", "अहमदर": "Ahmad",
+    "मोहम्मद": "Mohammad", "मो०": "Md", "मो": "Mohd",
+    "कुमार": "Kumar", "कुमारी": "Kumari", "देवी": "Devi",
+    "गुप्ता": "Gupta", "शर्मा": "Sharma", "सिंह": "Singh",
+    "कश्यप": "Kashyap", "राय": "Rai", "प्रसाद": "Prasad",
+    "अजय": "Ajay", "अमित": "Amit", "राहुल": "Rahul",
+    "कशिश": "Kashish", "श्रेष्ठा": "Shreshtha", "राज": "Raj",
+}
+
+def transliterate_devanagari(text: str) -> str:
+    """Convert Hindi Devanagari names into natural Latin phonetics for dual-script indexing."""
+    if not text:
+        return ""
+    words = text.split()
+    res_words = []
+    for word in words:
+        clean_w = word.strip(" ,.:;| हु-")
+        if not clean_w:
+            continue
+        if clean_w in _NAME_OVERRIDES:
+            res_words.append(_NAME_OVERRIDES[clean_w])
+            continue
+
+        res = []
+        i = 0
+        n = len(clean_w)
+        while i < n:
+            if i + 1 < n and clean_w[i:i+2] in _CONSONANTS:
+                base = _CONSONANTS[clean_w[i:i+2]]
+                i += 2
+                if i < n and clean_w[i] in _MATRAS:
+                    res.append(base + _MATRAS[clean_w[i]])
+                    i += 1
+                elif i < n and clean_w[i] == '्':
+                    res.append(base)
+                    i += 1
+                else:
+                    res.append(base + ('a' if i < n else ''))
+                continue
+
+            ch = clean_w[i]
+            if ch in _VOWELS:
+                res.append(_VOWELS[ch])
+                i += 1
+            elif ch in _CONSONANTS:
+                base = _CONSONANTS[ch]
+                i += 1
+                if i < n and clean_w[i] in _MATRAS:
+                    res.append(base + _MATRAS[clean_w[i]])
+                    i += 1
+                elif i < n and clean_w[i] == '्':
+                    res.append(base)
+                    i += 1
+                else:
+                    res.append(base + ('a' if i < n else ''))
+            elif ch in _MATRAS:
+                res.append(_MATRAS[ch])
+                i += 1
+            elif ch == '्':
+                i += 1
+            else:
+                res.append(ch)
+                i += 1
+        w_out = "".join(res)
+        w_out = re.sub(r'aa$', 'a', w_out)
+        if w_out:
+            res_words.append(w_out.capitalize())
+    return " ".join(res_words)
 
 
 def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:

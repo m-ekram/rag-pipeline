@@ -87,6 +87,9 @@ class IntentRouter:
                 prefix_query = entity_id[:-1] + "*"
                 logger.info("Exact ID miss. Trying prefix search: '%s'", prefix_query)
                 lexical_hits = self.lexical.search(prefix_query, limit=self.candidate_limit)
+            if not lexical_hits and hasattr(self.lexical, "fuzzy_search_epic"):
+                logger.info("Exact and prefix miss. Trying Levenshtein fuzzy search for: '%s'", entity_id)
+                lexical_hits = self.lexical.fuzzy_search_epic(entity_id, max_distance=2, limit=self.candidate_limit)
             if lexical_hits:
                 candidates = lexical_hits
             else:

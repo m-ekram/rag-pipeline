@@ -313,8 +313,14 @@ def main():
     parser.add_argument("--overlap", type=int, default=40, help="Chunk overlap in words")
     parser.add_argument("--max-pages", type=int, default=None, help="Limit number of pages to process from PDF (useful for quick testing)")
     parser.add_argument("--workers", type=int, default=1, help="Number of OCR worker processes (default: 1 sequential)")
+    parser.add_argument("--ocr-engine", choices=["auto", "paddle", "tesseract"], default="auto", help="OCR engine to use (default: auto)")
 
     args = parser.parse_args()
+    if args.ocr_engine == "paddle":
+        os.environ["ENABLE_PADDLEOCR"] = "1"
+    elif args.ocr_engine == "tesseract":
+        os.environ["ENABLE_PADDLEOCR"] = "0"
+
     if args.groq_key:
         os.environ["GROQ_API_KEY"] = args.groq_key.strip()
 

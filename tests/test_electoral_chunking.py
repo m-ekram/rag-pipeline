@@ -298,3 +298,11 @@ def test_multi_column_row_parsing_kashish_kashyap():
     assert "402-403" in r3.house
     assert r3.age == "23"
     assert "महिला" in r3.gender
+    assert "कशिश कश्यप (Kashish Kashyap)" in r3.to_markdown()
+
+
+def test_transliteration_dual_script():
+    v = VoterRecord(serial="10", epic="SHS4590493", name="फ़राज़ अहमद", house="4", age="28", gender="पुरुष")
+    md = v.to_markdown()
+    assert "Voter: फ़राज़ अहमद (Faraz Ahmad)" in md
+
