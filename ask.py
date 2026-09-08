@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import platform
 import re
 import sys
 import time
@@ -344,10 +345,16 @@ def main():
     parser.add_argument("--no-ocr-cache", "--reextract", action="store_true", help="Bypass OCR disk cache and force fresh extraction")
     parser.add_argument("--clear-cache", action="store_true", help="Purge disk extraction cache before extracting")
     parser.add_argument("--answer-lang", choices=["auto", "en", "hi", "ur"], default="auto", help="Response language override (default: auto)")
+    parser.add_argument("--ocr-engine", choices=["auto", "paddle", "tesseract"], default="auto", help="OCR engine to use (default: auto)")
 
     args = parser.parse_args()
     if args.ocr_engine == "paddle":
-        os.environ["ENABLE_PADDLEOCR"] = "1"
+        if sys.platform.startswith("linux") and platform.machine().lower() in ("aarch64", "arm64"):
+            print("[!] WARNING: PaddlePaddle has a known C++ ABI crash (SIGSEGV) on Linux ARM64. Falling back to native Tesseract.")
+            args.ocr_engine = "tesseract"
+            os.environ["ENABLE_PADDLEOCR"] = "0"
+        else:
+            os.environ["ENABLE_PADDLEOCR"] = "1"
     elif args.ocr_engine == "tesseract":
         os.environ["ENABLE_PADDLEOCR"] = "0"
 
@@ -369,6 +376,7 @@ def main():
     docs = load_file(
         doc_path,
         ocr_lang=args.ocr_lang,
+        ocr_engine=args.ocr_engine,
         max_pages=args.max_pages,
         workers=args.workers,
         use_ocr_cache=not args.no_ocr_cache,

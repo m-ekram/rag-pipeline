@@ -135,6 +135,7 @@ class RobustPaddleOCREngine:
     """
 
     def __init__(self, lang: str = "hi", text_det_unclip_ratio: float = 1.5, **kwargs):
+        self.raw_lang = lang
         if "urd" in lang.lower() or "urdu" in lang.lower():
             self.lang = "urd"
         elif "hin" in lang.lower() or "hi" in lang.lower():
@@ -229,11 +230,14 @@ class RobustPaddleOCREngine:
 
             if self.lang == "urd":
                 tess_lang = "urd"
+            elif "+" in getattr(self, "raw_lang", ""):
+                tess_lang = self.raw_lang
             elif "hin" in self.lang or "hi" in self.lang:
                 tess_lang = "hin+eng"
             else:
                 tess_lang = "eng"
             text = pytesseract.image_to_string(clean_image, lang=tess_lang, config="--psm 6")
+            self._engine_used = "tesseract"
             return text.strip()
         except ImportError as exc:
             # No Paddle (or it failed) AND no Tesseract: every page would return
@@ -259,7 +263,7 @@ class RobustPaddleOCREngine:
                 img_rgb = img.convert("RGB")
                 text = self.extract_text(img_rgb)
                 engine_name = self._engine_used or (
-                    "tesseract-native" if (not self._loaded or self.lang == "urd")
+                    "tesseract-native" if (not self._loaded or self.lang == "urd" or not self.paddle_available)
                     else "paddleocr"
                 )
                 # Real mean recognition score when the engine reports one. The
@@ -276,6 +280,14 @@ class RobustPaddleOCREngine:
         except Exception as e:
             logger.warning("[!] Error reading image %s for OCR: %s", image_path, e)
             return OCRResult(text="", page=page, confidence=0.0, engine="error")
+
+
+class TesseractOCRProvider(RobustPaddleOCREngine):
+    """Pure Tesseract OCR provider (bypasses PaddleOCR completely)."""
+
+    def __init__(self, lang: str = "hin+eng", text_det_unclip_ratio: float = 1.5, **kwargs):
+        super().__init__(lang=lang, text_det_unclip_ratio=text_det_unclip_ratio, **kwargs)
+        self.paddle_available = False
 
 
 # Aliases for backward compatibility
