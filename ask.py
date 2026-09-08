@@ -58,7 +58,13 @@ from retrieval.fts5_index import FTS5Index
 from retrieval.router import IntentRouter
 
 
-def load_file(file_path: Path, ocr_lang: str = "en", max_pages: Optional[int] = None, workers: int = 1) -> list[Document]:
+def load_file(
+    file_path: Path,
+    ocr_lang: str = "en",
+    ocr_engine: str = "paddle",
+    max_pages: Optional[int] = None,
+    workers: int = 1,
+) -> list[Document]:
     """Load a PDF, TXT, or MD file into Document instances."""
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
@@ -67,9 +73,20 @@ def load_file(file_path: Path, ocr_lang: str = "en", max_pages: Optional[int] = 
 
     if suffix == ".pdf":
         page_info = f" (max_pages={max_pages})" if max_pages else ""
-        print(f"[*] Extracting text from PDF: {file_path.name}{page_info} (OCR lang: {ocr_lang}, workers: {workers})...")
+        print(f"[*] Extracting text from PDF: {file_path.name}{page_info} (OCR engine: {ocr_engine}, lang: {ocr_lang}, workers: {workers})...")
         start = time.perf_counter()
-        extractor = PDFExtractor(ocr_lang=ocr_lang, use_cache=True, workers=workers)
+        
+        provider = None
+        if ocr_engine.lower() == "tesseract":
+            from ingestion.ocr import TesseractOCRProvider
+            provider = TesseractOCRProvider(lang=ocr_lang)
+
+        extractor = PDFExtractor(
+            ocr_provider=provider,
+            ocr_lang=ocr_lang,
+            use_cache=True,
+            workers=workers,
+        )
         docs = list(extractor.extract(str(file_path), clean=True, max_pages=max_pages))
         elapsed = time.perf_counter() - start
         print(f"[+] Extracted {len(docs)} pages in {elapsed:.2f}s.")
@@ -290,6 +307,7 @@ def main():
     parser.add_argument("--no-stream", action="store_true", help="Disable live token streaming")
     parser.add_argument("--threshold", type=float, default=-2.0, help="Abstention gate threshold")
     parser.add_argument("--ocr-lang", type=str, default="en", help="OCR language ('en', 'hi', etc.)")
+    parser.add_argument("--ocr-engine", type=str, default="paddle", choices=["paddle", "tesseract", "auto"], help="OCR engine ('paddle', 'tesseract', 'auto')")
     parser.add_argument("--no-rerank", action="store_true", help="Disable cross-encoder reranking")
     parser.add_argument("--reranker-model", type=str, default=None, help="Cross-encoder reranker model (default: ms-marco-MiniLM-L-6-v2, or multilingual e.g. cross-encoder/mmarco-mMiniLMv2-L12-H384-v1)")
     parser.add_argument("--reindex", action="store_true", help="Force rebuilding vector index even if already exists")
@@ -314,7 +332,13 @@ def main():
         args.ocr_lang = "urd"
         print(f"[*] Auto-detected Urdu document: set OCR language to 'urd'")
 
-    docs = load_file(doc_path, ocr_lang=args.ocr_lang, max_pages=args.max_pages, workers=args.workers)
+    docs = load_file(
+        doc_path,
+        ocr_lang=args.ocr_lang,
+        ocr_engine=args.ocr_engine,
+        max_pages=args.max_pages,
+        workers=args.workers,
+    )
     collection = sanitize_collection_name(doc_path)
 
     pipeline = build_pipeline(
