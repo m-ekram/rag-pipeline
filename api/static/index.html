@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RAG Chat</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+Devanagari:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper:#F5F6F8; --surface:#FFF; --sunk:#ECEEF2; --ink:#171A24;
+    --ink-soft:#444A5C; --muted:#6B7080; --rule:#DFE2E9; --rule-soft:#EAECF1;
+    --accent:#3B4CCA; --accent-dim:#E7E9FB; --good:#1F7A5C; --good-dim:#E2F0EA;
+    --bad:#A8362A; --bad-dim:#F7E6E3; --warn:#8A6212; --warn-dim:#FBF0D8;
+    --sans:"IBM Plex Sans",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+    --deva:"Noto Sans Devanagari","IBM Plex Sans",sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:#101219; --surface:#171A23; --sunk:#1D212C; --ink:#E7E9EF;
+      --ink-soft:#B4B9C6; --muted:#878DA0; --rule:#2A2F3C; --rule-soft:#232733;
+      --accent:#939CF5; --accent-dim:#232946; --good:#5CC49B; --good-dim:#16302A;
+      --bad:#E08878; --bad-dim:#33201D; --warn:#D6B15E; --warn-dim:#2E2716;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#101219; --surface:#171A23; --sunk:#1D212C; --ink:#E7E9EF;
+    --ink-soft:#B4B9C6; --muted:#878DA0; --rule:#2A2F3C; --rule-soft:#232733;
+    --accent:#939CF5; --accent-dim:#232946; --good:#5CC49B; --good-dim:#16302A;
+    --bad:#E08878; --bad-dim:#33201D; --warn:#D6B15E; --warn-dim:#2E2716;
+  }
+
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:15px; line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+    display:grid; grid-template-columns:308px 1fr; height:100vh; overflow:hidden;
+  }
+  button, input, select { font:inherit; color:inherit; }
+  button { cursor:pointer; }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+  /* ---------------- sidebar ---------------- */
+  .side {
+    background:var(--surface); border-right:1px solid var(--rule);
+    display:flex; flex-direction:column; overflow-y:auto; padding:20px 18px; gap:22px;
+  }
+  .brand { display:flex; flex-direction:column; gap:3px; }
+  .brand h1 { margin:0; font-size:16px; font-weight:600; letter-spacing:-0.01em; }
+  .brand span { font-family:var(--mono); font-size:11px; color:var(--muted);
+                letter-spacing:0.06em; text-transform:uppercase; }
+
+  .group { display:flex; flex-direction:column; gap:9px; }
+  .group > label { font-family:var(--mono); font-size:10.5px; letter-spacing:0.09em;
+                   text-transform:uppercase; color:var(--muted); font-weight:500; }
+
+  .picker {
+    display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+    background:var(--sunk); border:1px solid var(--rule); border-radius:7px;
+    padding:9px 11px; font-size:13.5px; color:var(--ink); min-height:40px;
+  }
+  .picker:hover { border-color:var(--accent); }
+  .picker .path {
+    flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    font-family:var(--mono); font-size:12px;
+  }
+  .picker .path.empty { color:var(--muted); font-family:var(--sans); font-size:13px; }
+
+  select {
+    width:100%; background:var(--sunk); border:1px solid var(--rule);
+    border-radius:7px; padding:9px 11px; font-size:13.5px; min-height:40px;
+  }
+  select:disabled { opacity:.55; cursor:not-allowed; }
+
+  .status-line { display:flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--muted); flex:none; }
+  .dot.on { background:var(--good); }
+  .dot.off { background:var(--bad); }
+
+  .primary {
+    background:var(--accent); color:#fff; border:none; border-radius:7px;
+    padding:11px 14px; font-weight:600; font-size:14px; width:100%;
+  }
+  .primary:disabled { opacity:.45; cursor:not-allowed; }
+  :root[data-theme="dark"] .primary, @media (prefers-color-scheme: dark) { }
+
+  .progress { display:flex; flex-direction:column; gap:7px; }
+  .bar { height:4px; background:var(--sunk); border-radius:2px; overflow:hidden; }
+  .bar > i { display:block; height:100%; width:0%; background:var(--accent);
+             transition:width .25s ease; }
+  .log {
+    font-family:var(--mono); font-size:11px; color:var(--muted);
+    max-height:132px; overflow-y:auto; display:flex; flex-direction:column; gap:3px;
+    background:var(--sunk); border-radius:6px; padding:9px 10px;
+  }
+  .log div { word-break:break-word; }
+  .log .err { color:var(--bad); }
+
+  .ready {
+    background:var(--good-dim); color:var(--good); border-radius:7px;
+    padding:10px 12px; font-size:12.5px; display:flex; flex-direction:column; gap:2px;
+  }
+  .ready b { font-weight:600; }
+  .ready span { font-family:var(--mono); font-size:11px; opacity:.85; }
+
+  .side footer { margin-top:auto; font-size:11.5px; color:var(--muted); }
+
+  /* ---------------- chat ---------------- */
+  .chat { display:flex; flex-direction:column; height:100vh; overflow:hidden; }
+  .thread { flex:1; overflow-y:auto; padding:30px 0 22px; }
+  .inner { max-width:760px; margin:0 auto; padding:0 26px;
+           display:flex; flex-direction:column; gap:26px; }
+
+  .empty-state { margin:auto; padding:60px 26px; text-align:center; max-width:520px; }
+  .empty-state h2 { font-size:20px; font-weight:600; margin:0 0 8px; letter-spacing:-0.01em; }
+  .empty-state p { margin:0 0 18px; color:var(--muted); font-size:14px; }
+  .samples { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; }
+  .samples button {
+    background:var(--surface); border:1px solid var(--rule); border-radius:20px;
+    padding:6px 13px; font-size:12.5px; color:var(--ink-soft);
+  }
+  .samples button:hover { border-color:var(--accent); color:var(--accent); }
+
+  .msg { display:flex; flex-direction:column; gap:9px; }
+  .msg .who { font-family:var(--mono); font-size:10.5px; letter-spacing:0.09em;
+              text-transform:uppercase; color:var(--muted); font-weight:500; }
+  .bubble-user {
+    background:var(--accent-dim); border-radius:10px; padding:12px 15px;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .bubble-bot { white-space:pre-wrap; word-break:break-word; font-size:15.5px; }
+  .bubble-bot:empty::after { content:"▍"; color:var(--muted); }
+
+  .abstain {
+    background:var(--warn-dim); color:var(--warn); border-radius:8px;
+    padding:12px 15px; font-size:14px;
+  }
+  .abstain b { display:block; margin-bottom:3px; }
+  .abstain span { font-family:var(--mono); font-size:11.5px; opacity:.9; }
+  .fail { background:var(--bad-dim); color:var(--bad); border-radius:8px;
+          padding:12px 15px; font-size:13.5px; }
+  .fail code { font-family:var(--mono); font-size:12px; }
+
+  .cites { display:flex; flex-direction:column; gap:7px; }
+  .cites summary {
+    cursor:pointer; font-family:var(--mono); font-size:11px; color:var(--muted);
+    letter-spacing:0.05em; text-transform:uppercase;
+  }
+  .cite {
+    border-left:2px solid var(--rule); padding:6px 0 6px 12px;
+    font-size:12.5px; color:var(--ink-soft); display:flex; flex-direction:column; gap:3px;
+  }
+  .cite b { font-family:var(--mono); font-size:11px; color:var(--accent); font-weight:500; }
+
+  .metrics {
+    display:flex; flex-wrap:wrap; gap:6px 14px; font-family:var(--mono);
+    font-size:11px; color:var(--muted); padding-top:4px;
+  }
+  .metrics b { color:var(--ink-soft); font-weight:500; }
+
+  .composer { border-top:1px solid var(--rule); background:var(--surface); padding:16px 26px 20px; }
+  .composer-inner { max-width:760px; margin:0 auto; display:flex; gap:10px; align-items:flex-end; }
+  textarea {
+    flex:1; resize:none; background:var(--sunk); border:1px solid var(--rule);
+    border-radius:9px; padding:11px 13px; font-size:14.5px; line-height:1.5;
+    max-height:180px; min-height:44px; font-family:var(--sans);
+  }
+  textarea:disabled { opacity:.55; }
+  .send {
+    background:var(--accent); color:#fff; border:none; border-radius:9px;
+    width:44px; height:44px; font-size:17px; flex:none; display:grid; place-items:center;
+  }
+  .send:disabled { opacity:.4; cursor:not-allowed; }
+  .hint { max-width:760px; margin:8px auto 0; font-size:11.5px; color:var(--muted); }
+
+  /* ---------------- folder modal ---------------- */
+  dialog {
+    border:1px solid var(--rule); border-radius:11px; padding:0; width:min(620px,92vw);
+    background:var(--surface); color:var(--ink);
+  }
+  dialog::backdrop { background:rgba(10,12,18,.5); }
+  .dlg-head { padding:16px 20px 12px; border-bottom:1px solid var(--rule);
+              display:flex; flex-direction:column; gap:8px; }
+  .dlg-head h3 { margin:0; font-size:15px; font-weight:600; }
+  .crumb { display:flex; gap:8px; align-items:center; }
+  .crumb input {
+    flex:1; background:var(--sunk); border:1px solid var(--rule); border-radius:6px;
+    padding:7px 10px; font-family:var(--mono); font-size:12px;
+  }
+  .crumb button { background:var(--sunk); border:1px solid var(--rule);
+                  border-radius:6px; padding:7px 11px; font-size:12.5px; }
+  .dlg-body { max-height:min(48vh,420px); overflow-y:auto; padding:8px 0; }
+  .row {
+    display:flex; align-items:center; gap:10px; padding:8px 20px;
+    width:100%; background:none; border:none; text-align:left; font-size:13.5px;
+  }
+  .row:hover { background:var(--sunk); }
+  .row .ico { width:16px; text-align:center; opacity:.65; flex:none; }
+  .row .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .row .sz { font-family:var(--mono); font-size:11px; color:var(--muted); }
+  .row.file { cursor:default; color:var(--ink-soft); }
+  .row.file:hover { background:none; }
+  .dlg-foot {
+    padding:13px 20px; border-top:1px solid var(--rule);
+    display:flex; align-items:center; justify-content:space-between; gap:12px;
+  }
+  .dlg-foot .count { font-size:12.5px; color:var(--muted); }
+  .dlg-foot .acts { display:flex; gap:8px; }
+  .ghost { background:var(--sunk); border:1px solid var(--rule); border-radius:7px;
+           padding:8px 14px; font-size:13.5px; }
+
+  @media (max-width:880px) {
+    body { grid-template-columns:1fr; grid-template-rows:auto 1fr; }
+    .side { border-right:none; border-bottom:1px solid var(--rule); max-height:44vh; }
+    .chat { height:auto; min-height:56vh; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
+</style>
+</head>
+<body>
+
+<aside class="side">
+  <div class="brand">
+    <h1>RAG Chat</h1>
+    <span>grounded · local-first</span>
+  </div>
+
+  <div class="group">
+    <label for="pickFolder">Data folder</label>
+    <button class="picker" id="pickFolder" type="button">
+      <span class="ico">📁</span>
+      <span class="path empty" id="folderPath">Choose a folder…</span>
+      <span style="opacity:.5">▾</span>
+    </button>
+    <div class="status-line" id="folderInfo">No folder selected</div>
+  </div>
+
+  <div class="group">
+    <label for="backendSel">Backend</label>
+    <select id="backendSel"><option>Loading…</option></select>
+    <label for="modelSel" style="margin-top:4px">Model</label>
+    <select id="modelSel"><option>—</option></select>
+    <div class="status-line" id="backendHint"><span class="dot"></span><span>Checking backends…</span></div>
+  </div>
+
+  <div class="group">
+    <label for="ocrLang">OCR language</label>
+    <select id="ocrLang">
+      <option value="en">English</option>
+      <option value="hi">Hindi / Devanagari</option>
+      <option value="ur">Urdu</option>
+    </select>
+  </div>
+
+  <button class="primary" id="indexBtn" disabled>Index folder</button>
+
+  <div class="progress" id="progress" hidden>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="log" id="log"></div>
+  </div>
+
+  <div class="ready" id="ready" hidden></div>
+
+  <footer>Runs on <code>127.0.0.1</code>. Answers cite the pages they came from,
+    and the system abstains when the folder has no evidence.</footer>
+</aside>
+
+<main class="chat">
+  <div class="thread" id="thread">
+    <div class="empty-state" id="emptyState">
+      <h2>Pick a folder, then ask it something</h2>
+      <p>Documents are OCR'd, chunked and indexed locally. Every answer cites its
+         source pages — and if the folder can't answer, it says so instead of guessing.</p>
+      <div class="samples" id="samples"></div>
+    </div>
+    <div class="inner" id="messages"></div>
+  </div>
+
+  <div class="composer">
+    <div class="composer-inner">
+      <textarea id="input" rows="1" placeholder="Index a folder to begin…" disabled></textarea>
+      <button class="send" id="send" disabled title="Send">↑</button>
+    </div>
+    <div class="hint" id="hint">Enter to send · Shift+Enter for a new line</div>
+  </div>
+</main>
+
+<dialog id="dlg">
+  <div class="dlg-head">
+    <h3>Select a data folder</h3>
+    <div class="crumb">
+      <button class="ghost" id="upBtn" type="button">↑ Up</button>
+      <input id="pathInput" spellcheck="false">
+      <button class="ghost" id="goBtn" type="button">Go</button>
+    </div>
+  </div>
+  <div class="dlg-body" id="dlgBody"></div>
+  <div class="dlg-foot">
+    <span class="count" id="dlgCount"></span>
+    <span class="acts">
+      <button class="ghost" id="cancelBtn" type="button">Cancel</button>
+      <button class="primary" style="width:auto" id="useBtn" type="button">Use this folder</button>
+    </span>
+  </div>
+</dialog>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const state = { folder:null, indexable:0, sessionId:null, browsing:null, busy:false, backends:[] };
+
+/* ---------- NDJSON streaming ---------- */
+async function* streamNDJSON(url, body) {
+  const res = await fetch(url, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+  });
+  if (!res.ok) { throw new Error(`${res.status} ${res.statusText}`); }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream:true });
+    let nl;
+    // Events are newline-delimited; a chunk can split one in half.
+    while ((nl = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (line) yield JSON.parse(line);
+    }
+  }
+  if (buffer.trim()) yield JSON.parse(buffer.trim());
+}
+
+/* ---------- backends ---------- */
+async function loadBackends() {
+  try {
+    const { backends } = await (await fetch("/api/backends")).json();
+    state.backends = backends;
+    const sel = $("backendSel");
+    sel.innerHTML = "";
+    for (const b of backends) {
+      const opt = document.createElement("option");
+      opt.value = b.id;
+      opt.textContent = b.available ? b.label : `${b.label} — unavailable`;
+      opt.disabled = !b.available;
+      sel.appendChild(opt);
+    }
+    const firstUsable = backends.find(b => b.available && b.id !== "stub")
+                     || backends.find(b => b.available);
+    if (firstUsable) sel.value = firstUsable.id;
+    syncModels();
+  } catch (err) {
+    $("backendHint").innerHTML = `<span class="dot off"></span><span>Backend check failed: ${err.message}</span>`;
+  }
+}
+
+function syncModels() {
+  const b = state.backends.find(x => x.id === $("backendSel").value);
+  const sel = $("modelSel");
+  sel.innerHTML = "";
+  if (!b) return;
+  if (b.models.length) {
+    for (const m of b.models) {
+      const opt = document.createElement("option");
+      opt.value = m; opt.textContent = m;
+      sel.appendChild(opt);
+    }
+    sel.disabled = false;
+  } else {
+    const opt = document.createElement("option");
+    opt.value = ""; opt.textContent = b.available ? "server default" : "—";
+    sel.appendChild(opt);
+    sel.disabled = true;
+  }
+  const dot = b.available ? "on" : "off";
+  const text = b.available
+    ? (b.models.length ? `${b.models.length} model(s) available` : "reachable")
+    : (b.hint || "not reachable");
+  $("backendHint").innerHTML = `<span class="dot ${dot}"></span><span>${text}</span>`;
+}
+
+/* ---------- folder picker ---------- */
+async function browse(path) {
+  const url = "/api/browse" + (path ? `?path=${encodeURIComponent(path)}` : "");
+  const res = await fetch(url);
+  if (!res.ok) {
+    const { detail } = await res.json().catch(() => ({ detail:res.statusText }));
+    $("dlgBody").innerHTML = `<div class="row file"><span class="ico">⚠</span><span class="nm">${detail}</span></div>`;
+    return;
+  }
+  const data = await res.json();
+  state.browsing = data;
+  $("pathInput").value = data.path;
+  $("upBtn").disabled = !data.parent;
+  $("dlgCount").textContent = data.indexable
+    ? `${data.indexable} indexable file(s) here`
+    : "No PDF/TXT/MD/CSV files here — open a sub-folder";
+  const useBtn = $("useBtn");
+  useBtn.disabled = data.indexable === 0;
+  useBtn.title = data.indexable ? "" : "This folder has no indexable documents";
+
+  const body = $("dlgBody");
+  body.innerHTML = "";
+  for (const d of data.dirs) {
+    const row = document.createElement("button");
+    row.className = "row"; row.type = "button";
+    row.innerHTML = `<span class="ico">📁</span><span class="nm"></span><span class="sz"></span>`;
+    row.querySelector(".nm").textContent = d.name;
+    // Counts let you find the data folder without opening each one.
+    const direct = d.data_files || 0, nested = d.nested_files || 0;
+    const sz = row.querySelector(".sz");
+    if (direct) {
+      sz.textContent = `${direct} file${direct > 1 ? "s" : ""}`;
+      sz.style.color = "var(--good)";
+    } else if (nested) {
+      // Data is usually a level or two down; say so instead of showing nothing.
+      sz.textContent = `${nested} inside`;
+      sz.style.color = "var(--muted)";
+    }
+    row.onclick = () => browse(d.path);
+    body.appendChild(row);
+  }
+  for (const f of data.files) {
+    const row = document.createElement("div");
+    row.className = "row file";
+    const kb = f.size > 1048576 ? `${(f.size/1048576).toFixed(1)} MB` : `${Math.max(1,Math.round(f.size/1024))} KB`;
+    row.innerHTML = `<span class="ico">📄</span><span class="nm"></span><span class="sz">${kb}</span>`;
+    row.querySelector(".nm").textContent = f.name;
+    body.appendChild(row);
+  }
+  if (!data.dirs.length && !data.files.length) {
+    body.innerHTML = `<div class="row file"><span class="ico">·</span><span class="nm">Empty folder</span></div>`;
+  }
+}
+
+function chooseFolder() {
+  const data = state.browsing;
+  if (!data) return;
+  state.folder = data.path;
+  state.indexable = data.indexable;
+  const el = $("folderPath");
+  el.textContent = data.path;
+  el.classList.remove("empty");
+  $("folderInfo").innerHTML = data.indexable
+    ? `<span class="dot on"></span><span>${data.indexable} file(s) ready to index</span>`
+    : `<span class="dot off"></span><span>No PDF/TXT/MD files in this folder</span>`;
+  $("indexBtn").disabled = data.indexable === 0;
+  $("dlg").close();
+}
+
+/* ---------- indexing ---------- */
+function logLine(text, isError) {
+  const div = document.createElement("div");
+  if (isError) div.className = "err";
+  div.textContent = text;
+  const log = $("log");
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+async function indexFolder() {
+  if (!state.folder || state.busy) return;
+  state.busy = true;
+  $("indexBtn").disabled = true;
+  $("ready").hidden = true;
+  $("progress").hidden = false;
+  $("log").innerHTML = "";
+  $("bar").style.width = "0%";
+
+  const body = {
+    folder: state.folder,
+    backend: $("backendSel").value,
+    model: $("modelSel").value || null,
+    ocr_lang: $("ocrLang").value,
+  };
+
+  try {
+    for await (const ev of streamNDJSON("/api/index", body)) {
+      if (ev.type === "progress") {
+        logLine(ev.message);
+        if (ev.total) $("bar").style.width = `${Math.round(100 * ev.current / ev.total)}%`;
+      } else if (ev.type === "done") {
+        $("bar").style.width = "100%";
+        state.sessionId = ev.session_id;
+        $("ready").hidden = false;
+        $("ready").innerHTML =
+          `<b>Indexed ${ev.documents} unit(s) from ${ev.files} file(s)</b>` +
+          `<span>${ev.backend} · ${ev.model || "default"}</span>`;
+        enableChat(true);
+      } else if (ev.type === "error") {
+        logLine(ev.message, true);
+      }
+    }
+  } catch (err) {
+    logLine(`Request failed: ${err.message}`, true);
+  } finally {
+    state.busy = false;
+    $("indexBtn").disabled = state.indexable === 0;
+  }
+}
+
+/* ---------- chat ---------- */
+function enableChat(on) {
+  $("input").disabled = !on;
+  $("send").disabled = !on;
+  $("input").placeholder = on ? "Ask something about this folder…" : "Index a folder to begin…";
+  if (on) {
+    $("emptyState").hidden = true;
+    $("input").focus();
+  }
+}
+
+function addMessage(who, cls) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg";
+  const label = document.createElement("div");
+  label.className = "who"; label.textContent = who;
+  const body = document.createElement("div");
+  body.className = cls;
+  wrap.append(label, body);
+  $("messages").appendChild(wrap);
+  $("thread").scrollTop = $("thread").scrollHeight;
+  return { wrap, body };
+}
+
+function renderCitations(wrap, citations) {
+  if (!citations || !citations.length) return;
+  const det = document.createElement("details");
+  det.className = "cites";
+  det.innerHTML = `<summary>${citations.length} source${citations.length > 1 ? "s" : ""}</summary>`;
+  for (const c of citations) {
+    const div = document.createElement("div");
+    div.className = "cite";
+    const b = document.createElement("b");
+    b.textContent = `[${c.n}] ${c.citation}${c.source ? " · " + c.source : ""}`;
+    const p = document.createElement("span");
+    p.textContent = c.preview;
+    div.append(b, p);
+    det.appendChild(div);
+  }
+  wrap.appendChild(det);
+}
+
+function renderMetrics(wrap, m) {
+  if (!m) return;
+  const div = document.createElement("div");
+  div.className = "metrics";
+  const bits = [
+    ["evidence", `${m.n_evidence_used}/${m.n_candidates}`],
+    ["grounded", m.grounded ? "yes" : "no"],
+    ["tokens", `${m.input_tokens}→${m.output_tokens}`],
+    ["model", m.model || "—"],
+  ];
+  if (m.latency_generation_ms) bits.push(["gen", `${(m.latency_generation_ms/1000).toFixed(1)}s`]);
+  if (m.cost_usd) bits.push(["cost", `$${m.cost_usd.toFixed(5)}`]);
+  div.innerHTML = bits.map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join("");
+  wrap.appendChild(div);
+}
+
+async function ask() {
+  const input = $("input");
+  const question = input.value.trim();
+  if (!question || state.busy || !state.sessionId) return;
+
+  addMessage("You", "bubble-user").body.textContent = question;
+  input.value = ""; input.style.height = "auto";
+  state.busy = true; enableChat(false);
+
+  const { wrap, body } = addMessage("Answer", "bubble-bot");
+  let streamed = "";
+
+  try {
+    for await (const ev of streamNDJSON("/api/chat", {
+      session_id: state.sessionId, question
+    })) {
+      if (ev.type === "token") {
+        streamed += ev.text;
+        body.textContent = streamed;
+        $("thread").scrollTop = $("thread").scrollHeight;
+      } else if (ev.type === "done") {
+        if (ev.abstained) {
+          body.remove();
+          const box = document.createElement("div");
+          box.className = "abstain";
+          box.innerHTML = `<b>No answer from this folder</b><span></span>`;
+          box.querySelector("span").textContent = ev.reason || ev.decision;
+          wrap.appendChild(box);
+        } else {
+          // The streamed text is raw [1]; the final answer has citations rendered.
+          body.textContent = ev.answer || streamed;
+          renderCitations(wrap, ev.citations);
+          renderMetrics(wrap, ev.metrics);
+        }
+      } else if (ev.type === "error") {
+        body.remove();
+        const box = document.createElement("div");
+        box.className = "fail";
+        box.innerHTML = `<b>Request failed.</b> `;
+        const code = document.createElement("code");
+        code.textContent = ev.message;
+        box.appendChild(code);
+        wrap.appendChild(box);
+      }
+    }
+  } catch (err) {
+    body.textContent = "";
+    const box = document.createElement("div");
+    box.className = "fail";
+    box.textContent = `Connection lost: ${err.message}`;
+    wrap.appendChild(box);
+  } finally {
+    state.busy = false; enableChat(true);
+    $("thread").scrollTop = $("thread").scrollHeight;
+  }
+}
+
+/* ---------- wiring ---------- */
+$("pickFolder").onclick = () => { $("dlg").showModal(); browse(state.folder); };
+$("upBtn").onclick = () => state.browsing?.parent && browse(state.browsing.parent);
+$("goBtn").onclick = () => browse($("pathInput").value.trim());
+$("pathInput").onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); browse($("pathInput").value.trim()); } };
+$("cancelBtn").onclick = () => $("dlg").close();
+$("useBtn").onclick = chooseFolder;
+$("backendSel").onchange = syncModels;
+$("indexBtn").onclick = indexFolder;
+$("send").onclick = ask;
+$("input").onkeydown = (e) => {
+  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
+};
+$("input").oninput = (e) => {
+  e.target.style.height = "auto";
+  e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
+};
+
+for (const q of ["What is this document about?", "Summarise the key findings",
+                 "मतदान केंद्र कहाँ है?"]) {
+  const b = document.createElement("button");
+  b.textContent = q;
+  b.onclick = () => { $("input").value = q; $("input").focus(); };
+  $("samples").appendChild(b);
+}
+
+loadBackends();
+</script>
+</body>
+</html>

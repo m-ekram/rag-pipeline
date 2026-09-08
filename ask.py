@@ -113,6 +113,7 @@ def build_pipeline(
     backend: Optional[str] = "auto",
     model: Optional[str] = None,
     reindex: bool = False,
+    qdrant_client=None,
 ) -> RAGPipeline:
     """Build chunks, indexes, retriever, and RAGPipeline."""
     has_electoral = any(is_electoral_text(d.text) for d in docs)
@@ -134,7 +135,9 @@ def build_pipeline(
 
     print(f"[*] Connecting to Qdrant ({collection_name})...")
     embedder = Embedder("intfloat/multilingual-e5-small")
-    dense = DenseIndex(collection_name, embedder=embedder)
+    # An explicit client lets callers use embedded/on-disk Qdrant when no
+    # server is running — a desktop app should not require Docker.
+    dense = DenseIndex(collection_name, embedder=embedder, client=qdrant_client)
 
     already_indexed = False
     if dense.client.collection_exists(collection_name):
