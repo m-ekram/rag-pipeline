@@ -53,6 +53,19 @@ def test_build_prompt_includes_question_and_abstain_instruction():
     assert len(built.evidence) == 3
 
 
+def test_build_prompt_detects_urdu_and_hindi_script():
+    urdu_q = "اس پولنگ بوتھ کا نام کیا ہے؟"
+    built_urdu = build_prompt(urdu_q, CANDIDATES)
+    assert "اردو زبان میں دیں" in built_urdu.prompt
+    assert "اردو زبان میں دیں" in built_urdu.system
+
+    hindi_q = "मतदान केंद्र का नाम क्या है?"
+    built_hindi = build_prompt(hindi_q, CANDIDATES)
+    assert "हिन्दी भाषा में दें" in built_hindi.prompt
+    assert "हिन्दी भाषा में दें" in built_hindi.system
+
+
+
 def test_build_prompt_respects_the_token_budget():
     big = [_scored(f"{i}::0", " ".join(["word"] * 400), 0.9, i) for i in range(5)]
     built = build_prompt("q", big, evidence_token_budget=600)

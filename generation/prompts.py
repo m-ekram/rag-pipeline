@@ -18,10 +18,14 @@ not just on Claude:
 """
 
 from dataclasses import dataclass
+import re
 from typing import Iterable, Optional, Sequence
 
 from ingestion.documents import Chunk
 from retrieval.types import ScoredChunk
+
+URDU_PATTERN = re.compile(r"[\u0600-\u06FF]")
+HINDI_PATTERN = re.compile(r"[\u0900-\u097F]")
 
 # The abstention instruction is deliberately blunt and repeated: small models
 # comply far more reliably with an explicit refusal token than with a nuanced
@@ -146,11 +150,24 @@ def build_prompt(
         kept.append(chunk)
         used += cost
 
+    lang_instruction = ""
+    if URDU_PATTERN.search(question):
+        lang_instruction = "\nAnswer strictly in Urdu language (جواب لازمی طور پر اردو زبان میں دیں)."
+        if system == SYSTEM_PROMPT:
+            system = f"{system}\n9. The question is in Urdu. You MUST write your final answer in Urdu language (جواب لازمی طور پر اردو زبان میں دیں)."
+    elif HINDI_PATTERN.search(question):
+        lang_instruction = "\nAnswer strictly in Hindi language (उत्तर हिन्दी भाषा में दें)."
+        if system == SYSTEM_PROMPT:
+            system = f"{system}\n9. The question is in Hindi. You MUST write your final answer in Hindi language (उत्तर हिन्दी भाषा में दें)."
+
     prompt = PROMPT_TEMPLATE.format(
         evidence=format_evidence(kept) if kept else "(none)",
         question=question.strip(),
         abstain=ABSTAIN_TOKEN,
     )
+    if lang_instruction:
+        prompt = f"{prompt}{lang_instruction}"
+
     return BuiltPrompt(
         prompt=prompt,
         system=system,

@@ -68,3 +68,55 @@ def test_router_exact_entity_fuzzy_levenshtein(tmp_path):
     assert results[0].chunk_id == "c1"
     assert "फ़राज़ अहमद" in results[0].chunk.text
 
+
+def test_router_admin_metadata_classification():
+    router = IntentRouter(lexical=None, dense=None)
+
+    # English
+    intent, _ = router.classify("What is the name of the polling booth and how many total voters?")
+    assert intent == QueryIntent.ADMIN_METADATA
+
+    intent, _ = router.classify("Tell me the booth name and total electors count")
+    assert intent == QueryIntent.ADMIN_METADATA
+
+    # Hindi
+    intent, _ = router.classify("मतदान केंद्र का नाम क्या है और कुल मतदाता कितने हैं?")
+    assert intent == QueryIntent.ADMIN_METADATA
+
+    intent, _ = router.classify("इस भाग में मतदाताओं की कुल संख्या क्या है?")
+    assert intent == QueryIntent.ADMIN_METADATA
+
+    # Urdu
+    intent, _ = router.classify("اس پولنگ بوتھ کا نام کیا ہے اور یہاں کل کتنے ووٹرز درج ہیں؟")
+    assert intent == QueryIntent.ADMIN_METADATA
+
+    intent, _ = router.classify("اس پولنگ اسٹیشن میں کل کتنے ووٹرز ہیں؟")
+    assert intent == QueryIntent.ADMIN_METADATA
+
+
+def test_router_admin_metadata_retrieval(tmp_path):
+    db_path = tmp_path / "test_fts.db"
+    fts = FTS5Index(db_path=db_path)
+    p1 = Chunk(
+        chunk_id="c_p1",
+        doc_id="d1",
+        text="मतदान स्थल का नाम: प्राथमिक विद्यालय रामपुर | मतदाताओं की कुल संख्या: 852",
+        page=1,
+        ordinal=0,
+    )
+    p20 = Chunk(
+        chunk_id="c_p20",
+        doc_id="d1",
+        text="- [Serial: 12 | EPIC: SHS1234567 | Voter: अकरम]",
+        page=20,
+        ordinal=1,
+    )
+    fts.build([p1, p20])
+
+    router = IntentRouter(lexical=fts, dense=None)
+    results = router.retrieve("اس پولنگ بوتھ کا نام کیا ہے اور یہاں کل کتنے ووٹرز درج ہیں؟")
+    assert len(results) >= 1
+    assert results[0].chunk_id == "c_p1"
+    assert "प्राथमिक विद्यालय रामपुर" in results[0].chunk.text
+
+
