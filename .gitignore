@@ -54,3 +54,6 @@ benchmark*.png
 # Environment variables & secrets
 .env
 *.key
+
+# OS artifacts
+.DS_Store

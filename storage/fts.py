@@ -10,7 +10,11 @@ from typing import Any, Iterable, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_TOKEN_PATTERN = re.compile(r"[\w/.-]+")
+# `\w` follows str.isalnum(), which is False for Indic combining marks, so
+# "निर्वाचक" split into ['न','र','व','चक'] and Hindi/Urdu search returned
+# nothing. The mark ranges below keep a word and its matras as one token —
+# same fix already applied in retrieval/fts5_index.py.
+_TOKEN_PATTERN = re.compile(r"[\w\u0300-\u1B00\u1DC0-\u1DFF/_\-.]+", re.UNICODE)
 
 
 @dataclass

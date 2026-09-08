@@ -32,6 +32,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from generation.abstention import Decision, ThresholdGate
 from generation.citations import render_citations
+from console import use_utf8_console
 from generation.llm import GroqBackend, OllamaBackend, get_llm
 from generation.pipeline import RAGPipeline
 from ingestion.chunking import (
@@ -209,7 +210,7 @@ def build_pipeline(
         llm = get_llm(chosen_backend, model=model)
 
     print(f"[+] Pipeline ready! Using LLM: {llm.name} ({llm.model})")
-    return RAGPipeline(
+    pipeline = RAGPipeline(
         retriever=retriever,
         gate=gate,
         reranker=reranker,
@@ -219,6 +220,17 @@ def build_pipeline(
         evidence_token_budget=1200,
         max_answer_tokens=250,
     )
+
+    # Load the model now rather than inside the first question. A cold Ollama
+    # pays a multi-GB weight load on its first request; leaving that inside the
+    # request means the read timeout has to cover it, which is what produced
+    # httpx.ReadTimeout on the first question.
+    if hasattr(llm, "warmup"):
+        print(f"[*] Warming up {llm.model} (loading weights)...")
+        seconds = pipeline.warmup()
+        print(f"[+] Model resident in {seconds:.1f}s.")
+
+    return pipeline
 
 
 def query_and_print(pipeline: RAGPipeline, question: str, stream: bool = True):
@@ -281,6 +293,7 @@ def query_and_print(pipeline: RAGPipeline, question: str, stream: bool = True):
 
 
 def main():
+    use_utf8_console()
     parser = argparse.ArgumentParser(description="Query any document using the RAG pipeline.")
     parser.add_argument("document", type=str, help="Path to document file (.pdf, .txt, .md)")
     parser.add_argument("-q", "--query", type=str, default=None, help="Single query to run")
