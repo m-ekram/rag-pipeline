@@ -61,12 +61,15 @@ from retrieval.router import IntentRouter
 
 def load_file(
     file_path: Path,
+    *,
     ocr_lang: str = "en",
-    ocr_engine: str = "paddle",
+    ocr_engine: str = "auto",
     max_pages: Optional[int] = None,
     workers: int = 1,
+    use_ocr_cache: bool = True,
+    clear_cache: bool = False,
 ) -> list[Document]:
-    """Load a PDF, TXT, or MD file into Document instances."""
+    """Load and extract text from a file (.pdf, .txt, .md, etc.)."""
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {file_path}")
 
@@ -74,7 +77,7 @@ def load_file(
 
     if suffix == ".pdf":
         page_info = f" (max_pages={max_pages})" if max_pages else ""
-        print(f"[*] Extracting text from PDF: {file_path.name}{page_info} (OCR engine: {ocr_engine}, lang: {ocr_lang}, workers: {workers})...")
+        print(f"[*] Extracting text from PDF: {file_path.name}{page_info} (OCR engine: {ocr_engine}, lang: {ocr_lang}, workers: {workers}, cache: {use_ocr_cache})...")
         start = time.perf_counter()
         
         provider = None
@@ -85,9 +88,12 @@ def load_file(
         extractor = PDFExtractor(
             ocr_provider=provider,
             ocr_lang=ocr_lang,
-            use_cache=True,
+            use_cache=use_ocr_cache,
             workers=workers,
         )
+        if clear_cache and hasattr(extractor.cache, "clear"):
+            extractor.cache.clear()
+
         docs = list(extractor.extract(str(file_path), clean=True, max_pages=max_pages))
         elapsed = time.perf_counter() - start
         print(f"[+] Extracted {len(docs)} pages in {elapsed:.2f}s.")
@@ -335,7 +341,8 @@ def main():
     parser.add_argument("--overlap", type=int, default=40, help="Chunk overlap in words")
     parser.add_argument("--max-pages", type=int, default=None, help="Limit number of pages to process from PDF (useful for quick testing)")
     parser.add_argument("--workers", type=int, default=1, help="Number of OCR worker processes (default: 1 sequential)")
-    parser.add_argument("--ocr-engine", choices=["auto", "paddle", "tesseract"], default="auto", help="OCR engine to use (default: auto)")
+    parser.add_argument("--no-ocr-cache", "--reextract", action="store_true", help="Bypass OCR disk cache and force fresh extraction")
+    parser.add_argument("--clear-cache", action="store_true", help="Purge disk extraction cache before extracting")
     parser.add_argument("--answer-lang", choices=["auto", "en", "hi", "ur"], default="auto", help="Response language override (default: auto)")
 
     args = parser.parse_args()
@@ -362,9 +369,10 @@ def main():
     docs = load_file(
         doc_path,
         ocr_lang=args.ocr_lang,
-        ocr_engine=args.ocr_engine,
         max_pages=args.max_pages,
         workers=args.workers,
+        use_ocr_cache=not args.no_ocr_cache,
+        clear_cache=args.clear_cache,
     )
     collection = sanitize_collection_name(doc_path)
 

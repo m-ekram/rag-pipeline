@@ -129,7 +129,10 @@ class IntentRouter:
                 logger.info("Exact and prefix miss. Trying Levenshtein fuzzy search for: '%s'", entity_id)
                 lexical_hits = self.lexical.fuzzy_search_epic(entity_id, max_distance=2, limit=self.candidate_limit)
             if lexical_hits:
-                candidates = lexical_hits
+                candidates = [
+                    ScoredChunk(chunk_id=c.chunk_id, score=max(1.0 - (idx * 0.01), c.score if c.score <= 1.0 else 1.0), rank=idx + 1, chunk=c.chunk)
+                    for idx, c in enumerate(lexical_hits)
+                ]
             else:
                 # If exact ID didn't hit in lexical, fall back to hybrid search
                 intent = QueryIntent.HYBRID_SEMANTIC
@@ -143,7 +146,10 @@ class IntentRouter:
                 if not lexical_hits:
                     lexical_hits = self.lexical.search(f"s{serial_num}", limit=self.candidate_limit)
             if lexical_hits:
-                candidates = lexical_hits
+                candidates = [
+                    ScoredChunk(chunk_id=c.chunk_id, score=1.0 - (idx * 0.01), rank=idx + 1, chunk=c.chunk)
+                    for idx, c in enumerate(lexical_hits)
+                ]
             else:
                 intent = QueryIntent.HYBRID_SEMANTIC
 
@@ -158,7 +164,10 @@ class IntentRouter:
                 if not lexical_hits:
                     lexical_hits = self.lexical.search(f'"{house_num}"', limit=self.candidate_limit)
             if lexical_hits:
-                candidates = lexical_hits
+                candidates = [
+                    ScoredChunk(chunk_id=c.chunk_id, score=1.0 - (idx * 0.01), rank=idx + 1, chunk=c.chunk)
+                    for idx, c in enumerate(lexical_hits)
+                ]
             else:
                 intent = QueryIntent.HYBRID_SEMANTIC
 
@@ -198,8 +207,12 @@ class IntentRouter:
                 dense_hits, lexical_hits, k=60, limit=self.candidate_limit
             )
 
-        # Cross-encoder neural reranking if configured
-        if self.reranker and candidates:
+        # Cross-encoder neural reranking:
+        # Crucial architectural guard: ONLY rerank fuzzy semantic queries (HYBRID_SEMANTIC).
+        # Deterministic structural/exact lookups (EXACT_ENTITY, SERIAL_LOOKUP, HOUSE_LOOKUP,
+        # PAGE_LOOKUP, ADMIN_METADATA) have exact factual relevance (score >= 1.0) and must NEVER
+        # be penalized or scrambled by a conversational sentence-similarity model.
+        if intent == QueryIntent.HYBRID_SEMANTIC and self.reranker and candidates:
             reranked = self.reranker.rerank(query, candidates, limit=limit)
             return reranked
 

@@ -177,9 +177,11 @@ class RAGPipeline:
             candidates = all_candidates
         else:
             candidates = self.retriever.retrieve(question, limit=self.candidate_limit)
-        timings["retrieval"] = (time.perf_counter() - started) * 1000
+        # Only rerank if candidates were not already reranked or are not exact structural hits (score >= 0.95)
+        has_exact_hits = any(getattr(c, "score", 0.0) >= 0.95 for c in candidates)
+        retriever_reranks = getattr(self.retriever, "reranker", None) is not None
 
-        if self.reranker is not None and candidates:
+        if self.reranker is not None and candidates and not has_exact_hits and not retriever_reranks:
             started = time.perf_counter()
             candidates = self.reranker.rerank(
                 question, candidates, limit=self.evidence_limit

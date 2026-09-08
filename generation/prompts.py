@@ -41,20 +41,6 @@ _LANG_UR_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Regex for detecting when the user explicitly requests an output language
-_LANG_EN_PATTERN = re.compile(
-    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+english|\bin\s+english\b|انگریزی\s*میں|انگلش\s*میں|अंग्रेज़ी?\s*में|इंग्लिश\s*में)",
-    re.IGNORECASE,
-)
-_LANG_HI_PATTERN = re.compile(
-    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+hindi|\bin\s+hindi\b|ہندی\s*میں|हिन्द?ी\s*में)",
-    re.IGNORECASE,
-)
-_LANG_UR_PATTERN = re.compile(
-    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+urdu|\bin\s+urdu\b|اردو\s*میں|उर्दू\s*में)",
-    re.IGNORECASE,
-)
-
 # The abstention instruction is deliberately blunt and repeated: small models
 # comply far more reliably with an explicit refusal token than with a nuanced
 # "if you are unsure" hedge.
@@ -69,7 +55,8 @@ CRITICAL CITATION RULES:
 5. Answer in the language of the question. If the evidence is in another language (such as Hindi/Devanagari), comprehend and extract the facts from the evidence accurately into your answer.
 6. Do not guess. Do not speculate. Do not apologise or explain your reasoning.
 7. Keep the answer under 120 words.
-8. In electoral roll records formatted as - [Serial: ... | EPIC: ... | Voter: ... | Relation: ... | House: ... | Age: ... | Gender: ...], each line corresponds strictly to one person. NEVER mix or combine fields from different voter lines."""
+8. In electoral roll records formatted as - [Serial: ... | EPIC: ... | Voter: ... | Relation: ... | House: ... | Age: ... | Gender: ...], each line corresponds strictly to one person. NEVER mix or combine fields from different voter lines.
+9. When asked for details of an entity (such as ID, name, code, or serial), extract and present all available fields from that record in the evidence. Do not decline with INSUFFICIENT_EVIDENCE if the record appears in the sources."""
 
 ABSTAIN_TOKEN = "INSUFFICIENT_EVIDENCE"
 

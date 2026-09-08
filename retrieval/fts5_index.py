@@ -196,6 +196,10 @@ class FTS5Index:
         if len(clean_target) < 6:
             return []
 
+        # Extract numeric core if present (e.g. '6306765' from 'JDK6306765')
+        num_core = re.search(r"\d{5,8}", clean_target)
+        target_digits = num_core.group(0) if num_core else ""
+
         cursor = self.con.execute(
             "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE '%EPIC:%'"
         )
@@ -205,15 +209,22 @@ class FTS5Index:
         for cid, text, meta_json in rows:
             epics = re.findall(r"EPIC:\s*([A-Za-z0-9/]+)", text)
             best_dist = 999
+            matched_digit = False
+
             for ep in epics:
                 clean_ep = _normalize_optical_epic(ep)
+                if target_digits and target_digits in clean_ep:
+                    matched_digit = True
+                    best_dist = 0
+                    break
+
                 if abs(len(clean_ep) - len(clean_target)) > max_distance:
                     continue
                 dist = _levenshtein(clean_target, clean_ep)
                 if dist < best_dist:
                     best_dist = dist
 
-            if best_dist <= max_distance:
+            if matched_digit or best_dist <= max_distance:
                 payload = json.loads(meta_json) if meta_json else {}
                 chunk_fields = {f for f in Chunk.__dataclass_fields__}
                 chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
@@ -222,7 +233,7 @@ class FTS5Index:
                 chunk_kwargs.setdefault("text", text)
                 chunk_kwargs.setdefault("ordinal", 0)
                 chunk = Chunk(**chunk_kwargs)
-                score = 1.0 - (best_dist * 0.05)
+                score = 1.0 if matched_digit else 1.0 - (best_dist * 0.05)
                 matches.append((best_dist, ScoredChunk(chunk_id=cid, score=score, rank=1, chunk=chunk)))
 
         matches.sort(key=lambda x: x[0])
@@ -236,6 +247,10 @@ class FTS5Index:
 def _normalize_optical_epic(raw: str) -> str:
     """Normalize optical character confusions in voter EPIC numbers."""
     clean = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+    # Normalize common OCR misreads at start: e.g. J0K -> JDK, 1DK -> JDK, 5HS -> SHS
+    clean = re.sub(r"^(?:J0K|1DK|UDK|4JDK)", "JDK", clean)
+    clean = re.sub(r"^(?:5HS|\$HS)", "SHS", clean)
+
     m = re.match(r"^([A-Z]{2,4})(.*)$", clean)
     if m:
         pref, rest = m.groups()

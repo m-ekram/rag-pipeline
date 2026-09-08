@@ -170,4 +170,25 @@ def test_router_serial_and_house_lookup(tmp_path):
     assert "अशफाक अहमद" in hits_house[0].chunk.text
 
 
+def test_router_bypasses_reranker_for_exact_intents(tmp_path):
+    class MockReranker:
+        def __init__(self):
+            self.called = False
 
+        def rerank(self, query, candidates, limit=None):
+            self.called = True
+            return candidates
+
+    db_path = tmp_path / "test_fts.db"
+    fts = FTS5Index(db_path=db_path)
+    c1 = Chunk(chunk_id="c1", doc_id="d1", text="- [Serial: 1088 | EPIC: JDK6306765 | Voter: मो० अफरोज खान]", ordinal=0)
+    fts.build([c1])
+
+    mock_reranker = MockReranker()
+    router = IntentRouter(lexical=fts, dense=None, reranker=mock_reranker)
+
+    # EXACT_ENTITY query should bypass reranker
+    results = router.retrieve("What are the details of voter ID JDK6306765?")
+    assert len(results) >= 1
+    assert mock_reranker.called is False  # Must not call cross-encoder for exact intent!
+    assert results[0].score >= 0.95

@@ -278,9 +278,17 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
         for line in r:
             # 1. Card headers (Serial & EPIC)
             m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])(\d{1,4})\s*[|\]\[:]\s*([^|\]\[\n]+)", line)
-            if len(m_hdrs) >= 1 and int(m_hdrs[0][0]) < 2500:
+            if not m_hdrs:
+                # Also try space-separated serial + alphanumeric EPIC (e.g. 1088 JDK6306765)
+                m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])(\d{1,4})\s+([A-Za-z]{2,4}[0-9OIl|BZS]{6,8})", line)
+
+            if len(m_hdrs) >= 1:
                 for s, ep in m_hdrs:
-                    r_serials.append(s.strip())
+                    clean_s = s.strip()
+                    # OCR normalizer: 7088 where previous was 1087 -> 1088
+                    if clean_s.startswith("7") and len(clean_s) == 4 and r_serials and r_serials[-1].startswith("1"):
+                        clean_s = "1" + clean_s[1:]
+                    r_serials.append(clean_s)
                     clean_ep = normalize_epic_id(ep)
                     if clean_ep:
                         r_epics.append(clean_ep)
@@ -293,11 +301,14 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
                     clean_ep = normalize_epic_id(ep)
                     if clean_ep and clean_ep not in r_epics:
                         r_epics.append(clean_ep)
-                all_ser = [s for s in re.findall(r"\b(\d{1,4})\b", line) if int(s) < 2500]
+                all_ser = [s for s in re.findall(r"\b(\d{1,4})\b", line) if int(s) < 3000]
                 non_epic_serials = [s for s in all_ser if not any(s in ep for ep in found_epics)]
                 for s in non_epic_serials:
-                    if s not in r_serials:
-                        r_serials.append(s)
+                    clean_s = s.strip()
+                    if clean_s.startswith("7") and len(clean_s) == 4 and r_serials and r_serials[-1].startswith("1"):
+                        clean_s = "1" + clean_s[1:]
+                    if clean_s not in r_serials:
+                        r_serials.append(clean_s)
                 continue
 
             m_ser = SERIAL_RE.search(line)
