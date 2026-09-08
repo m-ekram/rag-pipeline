@@ -253,7 +253,12 @@ def build_pipeline(
     return pipeline
 
 
-def query_and_print(pipeline: RAGPipeline, question: str, stream: bool = True):
+def query_and_print(
+    pipeline: RAGPipeline,
+    question: str,
+    stream: bool = True,
+    target_lang: Optional[str] = None,
+):
     """Execute query and print formatted answer, citations, and metrics."""
     print(f"\n=======================================================")
     print(f"Question: {question}")
@@ -271,7 +276,7 @@ def query_and_print(pipeline: RAGPipeline, question: str, stream: bool = True):
         sys.stdout.flush()
 
     callback = on_token if stream else None
-    result = pipeline.answer(question, stream_callback=callback)
+    result = pipeline.answer(question, stream_callback=callback, target_lang=target_lang)
     if tokens_streamed:
         print()
     total_time = (time.perf_counter() - start) * 1000
@@ -331,6 +336,7 @@ def main():
     parser.add_argument("--max-pages", type=int, default=None, help="Limit number of pages to process from PDF (useful for quick testing)")
     parser.add_argument("--workers", type=int, default=1, help="Number of OCR worker processes (default: 1 sequential)")
     parser.add_argument("--ocr-engine", choices=["auto", "paddle", "tesseract"], default="auto", help="OCR engine to use (default: auto)")
+    parser.add_argument("--answer-lang", choices=["auto", "en", "hi", "ur"], default="auto", help="Response language override (default: auto)")
 
     args = parser.parse_args()
     if args.ocr_engine == "paddle":
@@ -378,7 +384,7 @@ def main():
     stream = not args.no_stream
 
     if args.query:
-        query_and_print(pipeline, args.query, stream=stream)
+        query_and_print(pipeline, args.query, stream=stream, target_lang=args.answer_lang)
     else:
         print("\n[+] Entering interactive mode. Type your questions below (or 'exit' / 'quit' to stop).\n")
         while True:
@@ -389,7 +395,7 @@ def main():
                 if q.lower() in ("exit", "quit", "q"):
                     print("Goodbye!")
                     break
-                query_and_print(pipeline, q, stream=stream)
+                query_and_print(pipeline, q, stream=stream, target_lang=args.answer_lang)
             except (KeyboardInterrupt, EOFError):
                 print("\nExiting.")
                 break

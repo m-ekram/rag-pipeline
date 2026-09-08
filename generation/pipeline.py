@@ -154,7 +154,13 @@ class RAGPipeline:
                 return [parts[0].strip(), parts[1].strip()]
         return [question]
 
-    def answer(self, question: str, *, stream_callback: Optional[Any] = None) -> AnswerResult:
+    def answer(
+        self,
+        question: str,
+        *,
+        stream_callback: Optional[Any] = None,
+        target_lang: Optional[str] = None,
+    ) -> AnswerResult:
         timings: dict[str, float] = {}
 
         started = time.perf_counter()
@@ -201,6 +207,7 @@ class RAGPipeline:
             candidates,
             evidence_token_budget=self.evidence_token_budget,
             max_evidence=self.evidence_limit,
+            target_lang=target_lang,
         )
 
         complete_kwargs: dict[str, Any] = {

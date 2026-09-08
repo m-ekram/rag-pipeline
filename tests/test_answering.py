@@ -65,6 +65,36 @@ def test_build_prompt_detects_urdu_and_hindi_script():
     assert "हिन्दी भाषा में दें" in built_hindi.system
 
 
+def test_build_prompt_detects_explicit_requested_language():
+    # Urdu query requesting English
+    q_en1 = "اس پولنگ بوتھ کا نام کیا ہے؟ (Answer in English)"
+    built_en1 = build_prompt(q_en1, CANDIDATES)
+    assert "Answer strictly in English language." in built_en1.prompt
+    assert "English language" in built_en1.system
+
+    # Urdu query requesting English in Urdu script
+    q_en2 = "اس پولنگ بوتھ کا نام کیا ہے؟ جواب انگریزی میں دیں"
+    built_en2 = build_prompt(q_en2, CANDIDATES)
+    assert "Answer strictly in English language." in built_en2.prompt
+
+    # Urdu query requesting Hindi in Urdu script
+    q_hi = "اس پولنگ بوتھ کا نام کیا ہے؟ جواب ہندی میں دیں"
+    built_hi = build_prompt(q_hi, CANDIDATES)
+    assert "हिन्दी भाषा में दें" in built_hi.prompt
+    assert "हिन्दी भाषा में दें" in built_hi.system
+
+
+def test_build_prompt_respects_target_lang_override():
+    urdu_q = "اس پولنگ بوتھ کا نام کیا ہے؟"
+
+    # Forced English via target_lang
+    built_en = build_prompt(urdu_q, CANDIDATES, target_lang="en")
+    assert "Answer strictly in English language." in built_en.prompt
+
+    # Forced Hindi via target_lang
+    built_hi = build_prompt(urdu_q, CANDIDATES, target_lang="hi")
+    assert "हिन्दी भाषा में दें" in built_hi.prompt
+
 
 def test_build_prompt_respects_the_token_budget():
     big = [_scored(f"{i}::0", " ".join(["word"] * 400), 0.9, i) for i in range(5)]

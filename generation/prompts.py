@@ -27,6 +27,34 @@ from retrieval.types import ScoredChunk
 URDU_PATTERN = re.compile(r"[\u0600-\u06FF]")
 HINDI_PATTERN = re.compile(r"[\u0900-\u097F]")
 
+# Regex for detecting when the user explicitly requests an output language
+_LANG_EN_PATTERN = re.compile(
+    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+english|\bin\s+english\b|انگریزی\s*میں|انگلش\s*میں|अंग्रेज़ी?\s*में|इंग्लिश\s*में)",
+    re.IGNORECASE,
+)
+_LANG_HI_PATTERN = re.compile(
+    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+hindi|\bin\s+hindi\b|ہندی\s*میں|हिन्द?ी\s*में)",
+    re.IGNORECASE,
+)
+_LANG_UR_PATTERN = re.compile(
+    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+urdu|\bin\s+urdu\b|اردو\s*میں|उर्दू\s*में)",
+    re.IGNORECASE,
+)
+
+# Regex for detecting when the user explicitly requests an output language
+_LANG_EN_PATTERN = re.compile(
+    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+english|\bin\s+english\b|انگریزی\s*میں|انگلش\s*میں|अंग्रेज़ी?\s*में|इंग्लिश\s*में)",
+    re.IGNORECASE,
+)
+_LANG_HI_PATTERN = re.compile(
+    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+hindi|\bin\s+hindi\b|ہندی\s*میں|हिन्द?ी\s*में)",
+    re.IGNORECASE,
+)
+_LANG_UR_PATTERN = re.compile(
+    r"(?:(?:answer|reply|respond|give\s+answer)\s+in\s+urdu|\bin\s+urdu\b|اردو\s*میں|उर्दू\s*में)",
+    re.IGNORECASE,
+)
+
 # The abstention instruction is deliberately blunt and repeated: small models
 # comply far more reliably with an explicit refusal token than with a nuanced
 # "if you are unsure" hedge.
@@ -129,6 +157,7 @@ def build_prompt(
     evidence_token_budget: int = 3000,
     max_evidence: int = 8,
     system: str = SYSTEM_PROMPT,
+    target_lang: Optional[str] = None,
 ) -> BuiltPrompt:
     """Pack the highest-ranked evidence that fits, in rank order.
 
@@ -150,15 +179,47 @@ def build_prompt(
         kept.append(chunk)
         used += cost
 
+    resolved_lang = None
+    if target_lang and target_lang.lower() not in ("auto", "none"):
+        t = target_lang.lower()
+        if t in ("en", "english"):
+            resolved_lang = "en"
+        elif t in ("hi", "hindi"):
+            resolved_lang = "hi"
+        elif t in ("ur", "urdu"):
+            resolved_lang = "ur"
+        else:
+            resolved_lang = t
+
+    if not resolved_lang:
+        # Check if user explicitly asked for a language inside the question text
+        if _LANG_EN_PATTERN.search(question):
+            resolved_lang = "en"
+        elif _LANG_HI_PATTERN.search(question):
+            resolved_lang = "hi"
+        elif _LANG_UR_PATTERN.search(question):
+            resolved_lang = "ur"
+        # Otherwise default to the script of the question
+        elif URDU_PATTERN.search(question):
+            resolved_lang = "ur"
+        elif HINDI_PATTERN.search(question):
+            resolved_lang = "hi"
+
     lang_instruction = ""
-    if URDU_PATTERN.search(question):
+    if resolved_lang == "ur":
         lang_instruction = "\nAnswer strictly in Urdu language (جواب لازمی طور پر اردو زبان میں دیں)."
         if system == SYSTEM_PROMPT:
-            system = f"{system}\n9. The question is in Urdu. You MUST write your final answer in Urdu language (جواب لازمی طور پر اردو زبان میں دیں)."
-    elif HINDI_PATTERN.search(question):
+            system = f"{system}\n9. You MUST write your final answer in Urdu language (جواب لازمی طور پر اردو زبان میں دیں)."
+    elif resolved_lang == "hi":
         lang_instruction = "\nAnswer strictly in Hindi language (उत्तर हिन्दी भाषा में दें)."
         if system == SYSTEM_PROMPT:
-            system = f"{system}\n9. The question is in Hindi. You MUST write your final answer in Hindi language (उत्तर हिन्दी भाषा में दें)."
+            system = f"{system}\n9. You MUST write your final answer in Hindi language (उत्तर हिन्दी भाषा में दें)."
+    elif resolved_lang == "en":
+        # If question was in another script or explicitly requested English
+        if URDU_PATTERN.search(question) or HINDI_PATTERN.search(question) or _LANG_EN_PATTERN.search(question) or (target_lang and target_lang.lower() in ("en", "english")):
+            lang_instruction = "\nAnswer strictly in English language."
+            if system == SYSTEM_PROMPT:
+                system = f"{system}\n9. You MUST write your final answer strictly in English language."
 
     prompt = PROMPT_TEMPLATE.format(
         evidence=format_evidence(kept) if kept else "(none)",
