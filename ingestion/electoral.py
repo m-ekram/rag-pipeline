@@ -18,7 +18,8 @@ from typing import Optional
 
 
 EPIC_RE = re.compile(
-    r"\b([A-Z]{2,4}[0-9]{6,8}|[A-Z]{2}/[0-9]{2}/[0-9]{2,4}/[0-9]{4,8})\b"
+    r"\b([A-Z]{2,4}[0-9OIl|BZS]{6,8}|[A-Z]{2,4}/[0-9]{2}/[0-9]{2,4}/[0-9]{4,8})\b",
+    re.IGNORECASE,
 )
 SERIAL_RE = re.compile(r"^\s*\[?\s*([0-9]{1,4})\s*\]?\s*$")
 NAME_RE = re.compile(
@@ -285,19 +286,29 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
                         r_epics.append(clean_ep)
                 continue
 
-            # Fallback single serial / EPIC
+            # Fallback multi/single serial & EPIC across columns
+            found_epics = EPIC_RE.findall(line)
+            if found_epics:
+                for ep in found_epics:
+                    clean_ep = normalize_epic_id(ep)
+                    if clean_ep and clean_ep not in r_epics:
+                        r_epics.append(clean_ep)
+                all_ser = [s for s in re.findall(r"\b(\d{1,4})\b", line) if int(s) < 2500]
+                non_epic_serials = [s for s in all_ser if not any(s in ep for ep in found_epics)]
+                for s in non_epic_serials:
+                    if s not in r_serials:
+                        r_serials.append(s)
+                continue
+
             m_ser = SERIAL_RE.search(line)
-            m_ep = EPIC_RE.search(line)
-            if m_ep:
-                r_epics.append(normalize_epic_id(m_ep.group(1).strip()))
-            elif m_ser and int(m_ser.group(1)) < 2500 and len(m_ser.group(1)) <= 4:
+            if m_ser and int(m_ser.group(1)) < 2500 and len(m_ser.group(1)) <= 4:
                 r_serials.append(m_ser.group(1).strip())
 
             # 2. Multi-name split across columns
-            if "नाम" in line and any(k in line for k in ["निर्वाचक", "Prater", "Brae"]):
-                splits = [n.strip(" .हु|:：") for n in re.split(r"(?:नि[र्वा]+[च|ं|ि|क|्]+|Prater|Brae)\s*का\s*(?:नाम|ee)\s*[:：]?", line) if n.strip(" .हु|:：")]
+            if "नाम" in line and not any(k in line for k in ["पिता", "पति", "माता"]):
+                splits = [n.strip(" .हु|:：; ") for n in re.split(r"(?:नि[र्वा]+[च|ं|ि|क|्]+|[A-Za-z]+|rare|ste)?\s*का\s*(?:नाम|ee)\s*[:：]?", line) if n.strip(" .हु|:：; ")]
                 for nm in splits:
-                    clean_nm = re.sub(r"^(?:का\s*नाम|नाम)\s*[:：]?\s*", "", nm).strip(" .हु|:：")
+                    clean_nm = re.sub(r"^(?:का\s*नाम|नाम|[a-zA-Z;]+)\s*[:：]?\s*", "", nm).strip(" .हु|:：; ")
                     if clean_nm:
                         r_names.append(clean_nm)
                 continue

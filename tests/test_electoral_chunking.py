@@ -306,3 +306,32 @@ def test_transliteration_dual_script():
     md = v.to_markdown()
     assert "Voter: फ़राज़ अहमद (Faraz Ahmad)" in md
 
+
+def test_parse_multi_card_row_preserves_all_epics():
+    row_text = """
+विधानसभा निर्वाचन क्षेत्र की संख्या एवं नाम : 183-कुम्हरार
+भाग संख्या : 8
+1087 SHS1526623 1088 JDK6306765
+निर्वाचक का नाम : मो० तनवीर खान निर्वाचक का नाम : मो० अफरोज खान
+पिता का नाम:: मो० जाहिद खान पिता का नाम:: मो. जाहीद खान
+मकान संख्या : एस/0 मोहम्मद ज़ाहिद खान मकान संख्या : एस/ओ मोहम्मद ज़ाहिद खान
+उम्र : 54 लिंग: : पुरुष उम्र : 63 लिंग: : पुरुष
+"""
+    header, records = parse_electoral_records(row_text)
+    assert len(records) == 2
+
+    # First voter (Tanveer Khan)
+    v1 = records[0]
+    assert v1.serial == "1087"
+    assert v1.epic == "SHS1526623"
+    assert "तनवीर खान" in v1.name
+    assert v1.age == "54"
+
+    # Second voter (Afroz Khan)
+    v2 = records[1]
+    assert v2.serial == "1088"
+    assert v2.epic == "JDK6306765"
+    assert "अफरोज खान" in v2.name
+    assert v2.age == "63"
+
+
