@@ -323,7 +323,6 @@ def main():
     parser.add_argument("--no-stream", action="store_true", help="Disable live token streaming")
     parser.add_argument("--threshold", type=float, default=-2.0, help="Abstention gate threshold")
     parser.add_argument("--ocr-lang", type=str, default="en", help="OCR language ('en', 'hi', etc.)")
-    parser.add_argument("--ocr-engine", type=str, default="paddle", choices=["paddle", "tesseract", "auto"], help="OCR engine ('paddle', 'tesseract', 'auto')")
     parser.add_argument("--no-rerank", action="store_true", help="Disable cross-encoder reranking")
     parser.add_argument("--reranker-model", type=str, default=None, help="Cross-encoder reranker model (default: ms-marco-MiniLM-L-6-v2, or multilingual e.g. cross-encoder/mmarco-mMiniLMv2-L12-H384-v1)")
     parser.add_argument("--reindex", action="store_true", help="Force rebuilding vector index even if already exists")
