@@ -120,3 +120,54 @@ def test_router_admin_metadata_retrieval(tmp_path):
     assert "प्राथमिक विद्यालय रामपुर" in results[0].chunk.text
 
 
+def test_router_spaced_and_hyphenated_ids():
+    router = IntentRouter(lexical=None, dense=None)
+
+    intent, params = router.classify("Find voter with ID JDK 6306765")
+    assert intent == QueryIntent.EXACT_ENTITY
+    assert params["entity_id"] == "JDK6306765"
+
+    intent, params = router.classify("Voter card JDK-6306765 details")
+    assert intent == QueryIntent.EXACT_ENTITY
+    assert params["entity_id"] == "JDK6306765"
+
+
+def test_router_serial_and_house_lookup(tmp_path):
+    router = IntentRouter(lexical=None, dense=None)
+
+    # Serial classification
+    intent, params = router.classify("What are the details of serial 1088?")
+    assert intent == QueryIntent.SERIAL_LOOKUP
+    assert params["serial_num"] == "1088"
+
+    intent, params = router.classify("क्रमांक 469 की जानकारी")
+    assert intent == QueryIntent.SERIAL_LOOKUP
+    assert params["serial_num"] == "469"
+
+    # House classification
+    intent, params = router.classify("Who lives in house number 4?")
+    assert intent == QueryIntent.HOUSE_LOOKUP
+    assert params["house_num"] == "4"
+
+    intent, params = router.classify("मकान संख्या एस/0 के मतदाता")
+    assert intent == QueryIntent.HOUSE_LOOKUP
+    assert params["house_num"] == "एस/0"
+
+    # Retrieval tests
+    db_path = tmp_path / "test_fts.db"
+    fts = FTS5Index(db_path=db_path)
+    c1 = Chunk(chunk_id="c1", doc_id="d1", text="- [Serial: 1088 | EPIC: JDK6306765 | Voter: मो० अफरोज खान | House: एस/0]", ordinal=0)
+    c2 = Chunk(chunk_id="c2", doc_id="d1", text="- [Serial: 469 | EPIC: JDK0926604 | Voter: अशफाक अहमद | House: 4]", ordinal=1)
+    fts.build([c1, c2])
+
+    router_with_fts = IntentRouter(lexical=fts, dense=None)
+    hits = router_with_fts.retrieve("What are the details of serial 1088?")
+    assert len(hits) >= 1
+    assert "JDK6306765" in hits[0].chunk.text
+
+    hits_house = router_with_fts.retrieve("Who lives in house number 4?")
+    assert len(hits_house) >= 1
+    assert "अशफाक अहमद" in hits_house[0].chunk.text
+
+
+

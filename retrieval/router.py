@@ -23,12 +23,27 @@ logger = logging.getLogger(__name__)
 # Regex for detecting explicit page lookups: "page 66", "on page 12", "page no 3"
 _PAGE_PATTERN = re.compile(r"(?:on\s+page|page\s+no\.?|page\s+number|\bp\.?)\s*(\d+)", re.IGNORECASE)
 
-# Regex for detecting structured IDs: "BR/35/207/291052", "SHS5361415", "JDK2924306"
-_ID_PATTERN = re.compile(r"\b([A-Z]{2,4}/\d+/\d+/\d+|[A-Z]{3}\d{7})\b", re.IGNORECASE)
+# Regex for detecting structured IDs: "BR/35/207/291052", "SHS5361415", "JDK 6306765", "JDK-6306765"
+_ID_PATTERN = re.compile(
+    r"\b([A-Z]{2,4}(?:\s*/\s*\d+){3}|[A-Z]{2,4}\s*[-/]?\s*[0-9OIl|BZS]{6,8})\b",
+    re.IGNORECASE,
+)
+
+# Regex for detecting serial number queries: "serial 1088", "serial no: 469", "क्रमांक 1088", "سیریل نمبر 1088"
+_SERIAL_PATTERN = re.compile(
+    r"(?:(?:serial|sl\.?|voter\s*no\.?)\s*(?:no\.?|number)?|क्र(?:मांक|\.)?|سیریل\s*نمبر?)\s*[:#-]?\s*(\d{1,4})\b",
+    re.IGNORECASE,
+)
+
+# Regex for detecting house number queries: "house number 4", "house no: S/0", "मकान संख्या 4", "مکان نمبر 4"
+_HOUSE_PATTERN = re.compile(
+    r"(?:(?:house|h\.?\s*no\.?|quarter|flat)\s*(?:no\.?|number)?|मकान\s*(?:संख्या|नं|नम्बर|सं\.)?|مکان\s*(?:نمبر)?)\s*[:#-]?\s*([०-९0-9A-Za-z\u0900-\u097F\/\-]+)",
+    re.IGNORECASE,
+)
 
 # Regex for detecting polling station / total voter count / administrative queries across English, Hindi, and Urdu
 _ADMIN_PATTERN = re.compile(
-    r"(?:polling\s*(?:booth|station)|booth\s*(?:name|number)|station\s*name|मतदान\s*(?:केंद्र|स्थल)|मतदाताओं\s*(?:की\s*)?कुल\s*संख्या|कुल\s*(?:मतदाता|वोटर)|total\s*(?:voters|electors)|number\s*of\s*voters|how\s*many\s*voters|voter\s*count|پولنگ\s*(?:بوتھ|اسٹیشن|سٹیشن)|کل\s*(?:ووٹرز|رائے\s*دہندگان)|کتنے\s*ووٹرز|ووٹنگ\s*لسٹ|انتخابی\s*فہرست|constituency|assembly|विधानसभा|भाग\s*संख्या)",
+    r"(?:polling\s*(?:booth|station)|booth\s*(?:name|number|address|location)|station\s*name|मतदान\s*(?:केंद्र|स्थल)|मतदाताओं\s*(?:की\s*)?कुल\s*संख्या|कुल\s*(?:मतदाता|वोटर)|total\s*(?:voters|electors)|number\s*of\s*voters|how\s*many\s*voters|voter\s*count|male\s*voters|female\s*voters|पुरुष\s*मतदाता|महिला\s*मतदाता|مرد\s*ووٹرز|خواتین\s*ووٹرز|پولنگ\s*(?:بوتھ|اسٹیشن|سٹیشن)|کل\s*(?:ووٹرز|رائے\s*دہندگان)|کتنے\s*ووٹرز|ووٹنگ\s*لسٹ|انتخابی\s*فہرست|constituency|assembly|विधानसभा|भाग\s*संख्या|part\s*number|part\s*no|section\s*name|अनुभाग)",
     re.IGNORECASE,
 )
 
@@ -36,6 +51,8 @@ _ADMIN_PATTERN = re.compile(
 class QueryIntent(enum.Enum):
     PAGE_LOOKUP = "page_lookup"
     EXACT_ENTITY = "exact_entity"
+    SERIAL_LOOKUP = "serial_lookup"
+    HOUSE_LOOKUP = "house_lookup"
     ADMIN_METADATA = "admin_metadata"
     HYBRID_SEMANTIC = "hybrid_semantic"
 
@@ -64,7 +81,16 @@ class IntentRouter:
 
         id_match = _ID_PATTERN.search(query)
         if id_match:
-            return QueryIntent.EXACT_ENTITY, {"entity_id": id_match.group(1)}
+            clean_id = re.sub(r"[\s-]+", "", id_match.group(1)).upper()
+            return QueryIntent.EXACT_ENTITY, {"entity_id": clean_id}
+
+        serial_match = _SERIAL_PATTERN.search(query)
+        if serial_match:
+            return QueryIntent.SERIAL_LOOKUP, {"serial_num": serial_match.group(1)}
+
+        house_match = _HOUSE_PATTERN.search(query)
+        if house_match:
+            return QueryIntent.HOUSE_LOOKUP, {"house_num": house_match.group(1)}
 
         if _ADMIN_PATTERN.search(query):
             return QueryIntent.ADMIN_METADATA, {}
@@ -106,6 +132,34 @@ class IntentRouter:
                 candidates = lexical_hits
             else:
                 # If exact ID didn't hit in lexical, fall back to hybrid search
+                intent = QueryIntent.HYBRID_SEMANTIC
+
+        elif intent == QueryIntent.SERIAL_LOOKUP:
+            serial_num = params["serial_num"]
+            logger.info("Routing query to SERIAL_LOOKUP for Serial '%s'", serial_num)
+            lexical_hits = []
+            if self.lexical:
+                lexical_hits = self.lexical.search(f'"Serial: {serial_num}"', limit=self.candidate_limit)
+                if not lexical_hits:
+                    lexical_hits = self.lexical.search(f"s{serial_num}", limit=self.candidate_limit)
+            if lexical_hits:
+                candidates = lexical_hits
+            else:
+                intent = QueryIntent.HYBRID_SEMANTIC
+
+        elif intent == QueryIntent.HOUSE_LOOKUP:
+            house_num = params["house_num"]
+            logger.info("Routing query to HOUSE_LOOKUP for House '%s'", house_num)
+            lexical_hits = []
+            if self.lexical:
+                lexical_hits = self.lexical.search(f'"House: {house_num}"', limit=self.candidate_limit)
+                if not lexical_hits:
+                    lexical_hits = self.lexical.search(f'"मकान संख्या: {house_num}"', limit=self.candidate_limit)
+                if not lexical_hits:
+                    lexical_hits = self.lexical.search(f'"{house_num}"', limit=self.candidate_limit)
+            if lexical_hits:
+                candidates = lexical_hits
+            else:
                 intent = QueryIntent.HYBRID_SEMANTIC
 
         elif intent == QueryIntent.ADMIN_METADATA:

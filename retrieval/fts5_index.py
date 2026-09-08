@@ -191,8 +191,8 @@ class FTS5Index:
     def fuzzy_search_epic(
         self, target_epic: str, max_distance: int = 2, limit: int = 5
     ) -> list[ScoredChunk]:
-        """Fuzzy search across voter chunks for EPIC IDs with up to max_distance edit distance."""
-        clean_target = re.sub(r"[^A-Za-z0-9]", "", target_epic).upper()
+        """Fuzzy search across voter chunks for EPIC IDs with optical normalization and Levenshtein distance."""
+        clean_target = _normalize_optical_epic(target_epic)
         if len(clean_target) < 6:
             return []
 
@@ -206,7 +206,7 @@ class FTS5Index:
             epics = re.findall(r"EPIC:\s*([A-Za-z0-9/]+)", text)
             best_dist = 999
             for ep in epics:
-                clean_ep = re.sub(r"[^A-Za-z0-9]", "", ep).upper()
+                clean_ep = _normalize_optical_epic(ep)
                 if abs(len(clean_ep) - len(clean_target)) > max_distance:
                     continue
                 dist = _levenshtein(clean_target, clean_ep)
@@ -231,6 +231,25 @@ class FTS5Index:
     def close(self) -> None:
         """Close SQLite connection."""
         self.con.close()
+
+
+def _normalize_optical_epic(raw: str) -> str:
+    """Normalize optical character confusions in voter EPIC numbers."""
+    clean = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
+    m = re.match(r"^([A-Z]{2,4})(.*)$", clean)
+    if m:
+        pref, rest = m.groups()
+        rest_norm = (
+            rest.replace("I", "1")
+            .replace("L", "1")
+            .replace("O", "0")
+            .replace("D", "0")
+            .replace("S", "5")
+            .replace("B", "8")
+            .replace("Z", "2")
+        )
+        return pref + rest_norm
+    return clean
 
 
 def _levenshtein(s1: str, s2: str) -> int:
