@@ -3,10 +3,12 @@ ragenv311/
 venv/
 env/
 .venv/
-lib/
-lib64/
-bin/
-include/
+# Anchored to the repo root: these are virtualenv directories. Unanchored,
+# `lib/` and `bin/` match at any depth and silently swallow web/lib, web/bin, etc.
+/lib/
+/lib64/
+/bin/
+/include/
 
 # Caches and Compiled Files
 **/__pycache__/
@@ -54,6 +56,17 @@ benchmark*.png
 # Environment variables & secrets
 .env
 *.key
+
+# Research: benchmarks, audits, reports and the scripts that produced them.
+# Kept out of the repo deliberately — this is working material, not shipped code.
+research/
+
+# Next.js frontend
+web/node_modules/
+web/.next/
+web/out/
+web/.env*.local
+*.tsbuildinfo
 
 # OS artifacts
 .DS_Store

@@ -24,6 +24,7 @@ import os
 import queue
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import traceback
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -144,6 +145,10 @@ def _friendly(exc: Exception) -> str:
     """Turn the failures users actually hit into something actionable."""
     text = str(exc)
     lowered = text.lower()
+    if "same thread" in lowered and "sqlite" in lowered:
+        return ("The local vector store was used from the wrong thread. "
+                "Restart the server; if it persists, run Qdrant with "
+                "`docker compose up -d`.")
     if "connection refused" in lowered and "6333" in text:
         return ("Qdrant is not reachable and embedded mode could not start. "
                 "Run `docker compose up -d`, or free the .cache/qdrant folder.")
@@ -306,8 +311,22 @@ def _ndjson(event: dict) -> str:
     return json.dumps(event, ensure_ascii=False) + "\n"
 
 
+# All pipeline work runs on ONE dedicated thread, not a fresh thread per
+# request. Embedded Qdrant stores its data in SQLite, and SQLite connections
+# cannot cross threads — indexing on one request thread and then querying on
+# another raised:
+#
+#     SQLite objects created in a thread can only be used in that same thread
+#
+# A single worker also serialises the expensive stages, which is what we want:
+# concurrent OCR and embedding on a laptop thrash rather than parallelise. The
+# cost is that a long index blocks a chat behind it, which is acceptable for a
+# single-user local tool and far better than a corrupted store.
+_PIPELINE = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-pipeline")
+
+
 def _stream_worker(work) -> Iterator[str]:
-    """Run `work(emit)` on a thread, yielding whatever it emits.
+    """Run `work(emit)` on the pipeline thread, yielding whatever it emits.
 
     The pipeline is synchronous and CPU-bound; running it inline would block the
     event loop and stall every other request, including the browser's own
@@ -328,8 +347,7 @@ def _stream_worker(work) -> Iterator[str]:
         finally:
             events.put(sentinel)
 
-    thread = threading.Thread(target=run, daemon=True)
-    thread.start()
+    _PIPELINE.submit(run)
 
     while True:
         event = events.get()

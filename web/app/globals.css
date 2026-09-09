@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   Palette: ink on paper.
+
+   The subject is a document archive — scanned electoral rolls, page numbers,
+   voter IDs — so the surfaces read as paper and the accent reads as manuscript
+   ink rather than a product blue. Two semantic colours sit outside the accent:
+   teal for a grounded answer, amber for an abstention. Abstention is the
+   project's whole point, so it gets a designed state, not an error colour.
+--------------------------------------------------------------------------- */
+
+:root {
+  --paper: #faf9f6;
+  --surface: #ffffff;
+  --sunk: #f0efe9;
+  --raised: #ffffff;
+
+  --ink: #16181d;
+  --ink-soft: #3f434e;
+  --muted: #6c7180;
+  --faint: #9aa0ad;
+
+  --rule: #e4e2da;
+  --rule-soft: #eeece6;
+
+  --accent: #2f3e9e;
+  --accent-hover: #263384;
+  --accent-wash: #eaecf9;
+  --on-accent: #ffffff;
+
+  --grounded: #0f766e;
+  --grounded-wash: #e2f2f0;
+
+  --abstain: #92620c;
+  --abstain-wash: #fbf1dc;
+
+  --danger: #a33327;
+  --danger-wash: #f9e8e5;
+
+  --shadow-sm: 0 1px 2px rgb(22 24 29 / 0.05);
+  --shadow-md: 0 4px 16px -4px rgb(22 24 29 / 0.10);
+  --shadow-lg: 0 24px 48px -12px rgb(22 24 29 / 0.18);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0e1015;
+    --surface: #15181f;
+    --sunk: #1b1f28;
+    --raised: #1c202a;
+
+    --ink: #e9eaee;
+    --ink-soft: #b6bac4;
+    --muted: #868c9a;
+    --faint: #666c7a;
+
+    --rule: #272b35;
+    --rule-soft: #20242d;
+
+    --accent: #8fa0ff;
+    --accent-hover: #a5b3ff;
+    --accent-wash: #1d2340;
+    --on-accent: #0e1015;
+
+    --grounded: #4fd1c5;
+    --grounded-wash: #10302d;
+
+    --abstain: #e3b341;
+    --abstain-wash: #2f2714;
+
+    --danger: #e08878;
+    --danger-wash: #32201d;
+
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #0e1015;
+  --surface: #15181f;
+  --sunk: #1b1f28;
+  --raised: #1c202a;
+
+  --ink: #e9eaee;
+  --ink-soft: #b6bac4;
+  --muted: #868c9a;
+  --faint: #666c7a;
+
+  --rule: #272b35;
+  --rule-soft: #20242d;
+
+  --accent: #8fa0ff;
+  --accent-hover: #a5b3ff;
+  --accent-wash: #1d2340;
+  --on-accent: #0e1015;
+
+  --grounded: #4fd1c5;
+  --grounded-wash: #10302d;
+
+  --abstain: #e3b341;
+  --abstain-wash: #2f2714;
+
+  --danger: #e08878;
+  --danger-wash: #32201d;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px -4px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 24px 48px -12px rgb(0 0 0 / 0.6);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-sunk: var(--sunk);
+  --color-raised: var(--raised);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-rule: var(--rule);
+  --color-rule-soft: var(--rule-soft);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-wash: var(--accent-wash);
+  --color-on-accent: var(--on-accent);
+  --color-grounded: var(--grounded);
+  --color-grounded-wash: var(--grounded-wash);
+  --color-abstain: var(--abstain);
+  --color-abstain-wash: var(--abstain-wash);
+  --color-danger: var(--danger);
+  --color-danger-wash: var(--danger-wash);
+
+  --font-sans: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-instrument-serif), Georgia, serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, Menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-public-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Devanagari needs a real face, or Hindi renders in whatever the OS picks and
+   looks different on every machine. Applied by language, not by class, so any
+   Hindi that arrives from OCR is typeset correctly wherever it lands. */
+:lang(hi),
+.deva {
+  font-family: var(--font-noto-deva), var(--font-public-sans), sans-serif;
+}
+
+::selection {
+  background: var(--accent-wash);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Thin, unobtrusive scrollbars — the panes scroll constantly here. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--rule) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.rise {
+  animation: rise 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
+  }
+}
+.caret::after {
+  content: "▍";
+  margin-left: 1px;
+  color: var(--accent);
+  animation: caret 1s steps(1) infinite;
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 33%;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0.55;
+  animation: sweep 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
