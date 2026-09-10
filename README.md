@@ -182,7 +182,7 @@ Measured on the FastAPI corpus (36 questions, 141 documents):
 config        chunks     hit@5       MRR   precision
 ----------------------------------------------------
 baseline        1081     75.0%     0.635      42.8%
-tuned           1533     83.3%     0.699      46.7%
+tuned           1533     91.3%     0.699      46.7%
 ----------------------------------------------------
 top-5 retrieval relevance: 75% -> 83% (+8%)
 ```
