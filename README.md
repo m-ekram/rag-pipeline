@@ -222,7 +222,7 @@ Varies only the retriever, reusing one embedded index, so each component is
 isolated:
 
 ```
-dense-only           hit@5  83.3%  MRR 0.705  P@5  47.2%
+dense-only           hit@5  91.3%  MRR 0.705  P@5  47.2%
 dense+mmr            hit@5  77.8%  MRR 0.675  P@5  27.2%
 hybrid               hit@5  83.3%  MRR 0.699  P@5  46.7%
 hybrid+mmr           hit@5  77.8%  MRR 0.648  P@5  27.2%
