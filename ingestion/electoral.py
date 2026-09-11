@@ -108,19 +108,20 @@ def extract_header_context(lines: list[str]) -> str:
 
 def normalize_epic_id(raw_epic: str) -> str:
     """Normalize OCR character confusions in EPIC numbers (e.g. SHS5I24394 -> SHS5124394)."""
-    clean = re.sub(r"[\s|\]\[‘'._]+", "", raw_epic).strip()
+    clean = re.sub(r"[\s|\]\[‘'._()\-]+", "", raw_epic).strip().upper()
+    # Normalize optical misreads like 20( -> JDK, J0K -> JDK, 5HS -> SHS
+    clean = re.sub(r"^(?:20|2O|2D|UDK|1DK|J0K)", "JDK", clean)
+    clean = re.sub(r"^(?:5HS|\$HS)", "SHS", clean)
     m = re.match(r"^([A-Z]{2,4})(.*)$", clean)
     if m:
         pref, digits = m.groups()
         digits_norm = (
             digits.replace("I", "1")
-            .replace("l", "1")
+            .replace("L", "1")
             .replace("|", "1")
             .replace("O", "0")
-            .replace("o", "0")
             .replace("D", "0")
             .replace("S", "5")
-            .replace("s", "5")
             .replace("B", "8")
             .replace("Z", "2")
         )
@@ -277,16 +278,17 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
 
         for line in r:
             # 1. Card headers (Serial & EPIC)
-            m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])(\d{1,4})\s*[|\]\[:]\s*([^|\]\[\n]+)", line)
+            m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])([tT0-9]{1,4})\s*[|\]\[:]\s*([^|\]\[\n]+)", line)
             if not m_hdrs:
                 # Also try space-separated serial + alphanumeric EPIC (e.g. 1088 JDK6306765)
-                m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])(\d{1,4})\s+([A-Za-z]{2,4}[0-9OIl|BZS]{6,8})", line)
+                m_hdrs = re.findall(r"(?:^|[|\]\[‘'\s])([tT0-9]{1,4})\s+([A-Za-z0-9()]{6,16})", line)
 
             if len(m_hdrs) >= 1:
                 for s, ep in m_hdrs:
                     clean_s = s.strip()
-                    # OCR normalizer: 7088 where previous was 1087 -> 1088
-                    if clean_s.startswith("7") and len(clean_s) == 4 and r_serials and r_serials[-1].startswith("1"):
+                    if clean_s.lower().startswith("t"):
+                        clean_s = "1" + clean_s[1:]
+                    if (clean_s.startswith("7") and len(clean_s) == 4 and r_serials and r_serials[-1].startswith("1")) or (len(clean_s) == 4 and clean_s.startswith("7") and int(clean_s) > 3000):
                         clean_s = "1" + clean_s[1:]
                     r_serials.append(clean_s)
                     clean_ep = normalize_epic_id(ep)
@@ -301,11 +303,13 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
                     clean_ep = normalize_epic_id(ep)
                     if clean_ep and clean_ep not in r_epics:
                         r_epics.append(clean_ep)
-                all_ser = [s for s in re.findall(r"\b(\d{1,4})\b", line) if int(s) < 3000]
+                all_ser = [s for s in re.findall(r"\b([tT0-9]{1,4})\b", line)]
                 non_epic_serials = [s for s in all_ser if not any(s in ep for ep in found_epics)]
                 for s in non_epic_serials:
                     clean_s = s.strip()
-                    if clean_s.startswith("7") and len(clean_s) == 4 and r_serials and r_serials[-1].startswith("1"):
+                    if clean_s.lower().startswith("t"):
+                        clean_s = "1" + clean_s[1:]
+                    if (clean_s.startswith("7") and len(clean_s) == 4 and r_serials and r_serials[-1].startswith("1")) or (len(clean_s) == 4 and clean_s.startswith("7") and int(clean_s) > 3000):
                         clean_s = "1" + clean_s[1:]
                     if clean_s not in r_serials:
                         r_serials.append(clean_s)
@@ -316,7 +320,7 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
                 r_serials.append(m_ser.group(1).strip())
 
             # 2. Multi-name split across columns
-            if "नाम" in line and not any(k in line for k in ["पिता", "पति", "माता"]):
+            if "नाम" in line and not any(k in line for k in ["पिता", "पति", "माता", "fran", "प्रात्रा"]):
                 splits = [n.strip(" .हु|:：; ") for n in re.split(r"(?:नि[र्वा]+[च|ं|ि|क|्]+|[A-Za-z]+|rare|ste)?\s*का\s*(?:नाम|ee)\s*[:：]?", line) if n.strip(" .हु|:：; ")]
                 for nm in splits:
                     clean_nm = re.sub(r"^(?:का\s*नाम|नाम|[a-zA-Z;]+)\s*[:：]?\s*", "", nm).strip(" .हु|:：; ")
@@ -325,13 +329,14 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
                 continue
 
             # 3. Multi-relation split across columns
-            if any(k in line for k in ["पिता", "पति", "माता"]):
-                rel_types = re.findall(r"(पिता|पति|पतिका|माता|अन्य)(?:\s*का)?\s*ना[मप्र]+\s*[:：]+", line)
-                rel_names = [rn.strip(" .हु|:：") for rn in re.split(r"(?:पिता|पति|पतिका|माता|अन्य)(?:\s*का)?\s*ना[मप्र]+\s*[:：]+", line) if rn.strip(" .हु|:：")]
+            if any(k in line for k in ["पिता", "पति", "माता", "fran", "प्रात्रा"]):
+                rel_types = re.findall(r"(पिता|पति|पतिका|माता|fran|प्रात्रा|अन्य)(?:\s*का)?\s*(?:ना[मप्र]+|ame)\s*[:：]+", line)
+                rel_names = [rn.strip(" .हु|:：") for rn in re.split(r"(?:पिता|पति|पतिका|माता|fran|प्रात्रा|अन्य)(?:\s*का)?\s*(?:ना[मप्र]+|ame)\s*[:：]+", line) if rn.strip(" .हु|:：")]
                 if rel_types and rel_names:
                     for t, rn in zip(rel_types, rel_names):
-                        norm_t = "पति" if t == "पतिका" else t
-                        r_rels.append(f"{norm_t}: {rn}")
+                        norm_t = "पिता" if t in ("fran", "प्रात्रा") else ("पति" if t == "पतिका" else t)
+                        clean_rn = re.sub(r"^(?:fran\s*का\s*नाम|पिता\s*का\s*नाम|पति\s*का\s*नाम|का\s*नाम)\s*[:：]*\s*", "", rn).strip(" .हु|:：")
+                        r_rels.append(f"{norm_t}: {clean_rn}")
                     continue
 
             # Fallback single relation
@@ -344,7 +349,7 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
 
             # 4. Multi-house split across columns
             if any(k in line for k in ["मकान", "प्रकान", "भकान"]):
-                splits = [re.sub(r"(?:फोटो\s*उपलब्ध|फोटो|उपलब्ध|[|.]).*", "", h).strip(" :：") for h in re.split(r"(?:मकान|प्रकान|भकान)\s*(?:संख्या|संयम|संकया|संया|नं|क्र)\s*[:：]?", line) if h.strip()]
+                splits = [re.sub(r"(?:फोटो\s*उपलब्ध|फोटो|उपलब्ध|[|.]).*", "", h).strip(" :：") for h in re.split(r"(?:मकान|प्रकान|भकान)\s*(?:संख्या|संयम|संकया|संया|chon|नं|क्र|सं\.?)\s*[:：]?", line) if h.strip()]
                 if splits:
                     for h in splits:
                         clean_h = h.strip()
@@ -353,10 +358,11 @@ def parse_electoral_records(text: str) -> tuple[str, list[VoterRecord]]:
                     continue
 
             # 5. Multi-age/gender split across columns
-            m_ag = re.findall(r"([0-9०-९]{1,3})\s*[^0-9०-९\n]{1,15}?(महिला|पुरु[ष|थ|स]|अन्य)", line)
+            m_ag = re.findall(r"([0-9०-९]{1,3})\s*[^0-9०-९\n]{1,15}?(महिला|पु[रुठूथस]+[षथसठ]|पुरु[षथस]|अन्य)", line)
             if m_ag:
                 for ag, gn in m_ag:
-                    r_age_gens.append((ag.strip(), gn.strip()))
+                    norm_gn = "पुरुष" if any(k in gn for k in ["पुरु", "पुठु", "पुथु"]) else ("महिला" if "महिल" in gn else gn.strip())
+                    r_age_gens.append((ag.strip(), norm_gn.strip()))
 
         n_voters = max(len(r_epics), len(r_names), len(r_serials), len(r_age_gens))
         for i in range(n_voters):

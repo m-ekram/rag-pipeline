@@ -200,29 +200,39 @@ class FTS5Index:
         num_core = re.search(r"\d{5,8}", clean_target)
         target_digits = num_core.group(0) if num_core else ""
 
-        cursor = self.con.execute(
-            "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE '%EPIC:%'"
-        )
+        if target_digits and len(target_digits) >= 5:
+            cursor = self.con.execute(
+                "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE '%EPIC:%' OR text LIKE ?",
+                (f"%{target_digits}%",),
+            )
+        else:
+            cursor = self.con.execute(
+                "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE '%EPIC:%'"
+            )
         rows = cursor.fetchall()
 
         matches = []
         for cid, text, meta_json in rows:
-            epics = re.findall(r"EPIC:\s*([A-Za-z0-9/]+)", text)
+            epics = re.findall(r"EPIC:\s*([^\s|,]+)", text)
             best_dist = 999
             matched_digit = False
 
-            for ep in epics:
-                clean_ep = _normalize_optical_epic(ep)
-                if target_digits and target_digits in clean_ep:
-                    matched_digit = True
-                    best_dist = 0
-                    break
+            if target_digits and len(target_digits) >= 5 and target_digits in text:
+                matched_digit = True
+                best_dist = 0
+            else:
+                for ep in epics:
+                    clean_ep = _normalize_optical_epic(ep)
+                    if target_digits and target_digits in clean_ep:
+                        matched_digit = True
+                        best_dist = 0
+                        break
 
-                if abs(len(clean_ep) - len(clean_target)) > max_distance:
-                    continue
-                dist = _levenshtein(clean_target, clean_ep)
-                if dist < best_dist:
-                    best_dist = dist
+                    if abs(len(clean_ep) - len(clean_target)) > max_distance:
+                        continue
+                    dist = _levenshtein(clean_target, clean_ep)
+                    if dist < best_dist:
+                        best_dist = dist
 
             if matched_digit or best_dist <= max_distance:
                 payload = json.loads(meta_json) if meta_json else {}
@@ -247,8 +257,8 @@ class FTS5Index:
 def _normalize_optical_epic(raw: str) -> str:
     """Normalize optical character confusions in voter EPIC numbers."""
     clean = re.sub(r"[^A-Za-z0-9]", "", raw).upper()
-    # Normalize common OCR misreads at start: e.g. J0K -> JDK, 1DK -> JDK, 5HS -> SHS
-    clean = re.sub(r"^(?:J0K|1DK|UDK|4JDK)", "JDK", clean)
+    # Normalize common OCR misreads at start: e.g. J0K -> JDK, 1DK -> JDK, 5HS -> SHS, 20 -> JDK
+    clean = re.sub(r"^(?:J0K|1DK|UDK|4JDK|20|2O|2D)", "JDK", clean)
     clean = re.sub(r"^(?:5HS|\$HS)", "SHS", clean)
 
     m = re.match(r"^([A-Z]{2,4})(.*)$", clean)

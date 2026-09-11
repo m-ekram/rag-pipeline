@@ -30,15 +30,33 @@ from .preprocess import ExtractionResult, reconcile_extractions, text_quality, P
 _WORKER_OCR: Optional[PaddleOCRProvider] = None
 
 
-def _ocr_worker_init(lang: str, text_det_unclip_ratio: float = 1.8):
-    """Initializer for background OCR worker processes."""
+def _ocr_worker_init(lang: str, text_det_unclip_ratio: float = 1.8, provider_name: str = "PaddleOCRProvider"):
+    """Initializer for background OCR worker processes (1 core per worker, reserving 1 core for SSH/system)."""
     import os
     os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["OMP_THREAD_LIMIT"] = "1"
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
     os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
     os.environ["PADDLE_NUM_THREADS"] = "1"
-    from .ocr import PaddleOCRProvider
+
+    # Restrict worker processes to non-last CPU cores, reserving 1 core for SSH & system
+    if hasattr(os, "sched_setaffinity"):
+        try:
+            total_cpus = os.cpu_count() or 1
+            if total_cpus > 1:
+                # Cores 0 .. total_cpus - 2 used by workers; core total_cpus - 1 kept free
+                os.sched_setaffinity(0, set(range(total_cpus - 1)))
+        except Exception:
+            pass
+
+    from .ocr import PaddleOCRProvider, TesseractOCRProvider
     global _WORKER_OCR
-    _WORKER_OCR = PaddleOCRProvider(lang=lang, text_det_unclip_ratio=text_det_unclip_ratio)
+    if provider_name == "TesseractOCRProvider":
+        _WORKER_OCR = TesseractOCRProvider(lang=lang, text_det_unclip_ratio=text_det_unclip_ratio)
+    else:
+        _WORKER_OCR = PaddleOCRProvider(lang=lang, text_det_unclip_ratio=text_det_unclip_ratio)
 
 
 def _ocr_page_worker_task(pdf_path_str: str, page_number: int, render_scale: float) -> tuple[int, str, float | None, str]:
@@ -357,9 +375,9 @@ class PDFExtractor:
                     active_workers = min(self.workers, num_to_ocr)
                     print(f"[*] Processing {num_to_ocr} pages in parallel with {active_workers} worker processes...", flush=True)
                     t_start_pool = time.perf_counter()
-                    ocr_lookup = {p[0]: p for p in pages_needing_ocr}
+                    provider_cls_name = type(self._ocr_provider).__name__ if self._ocr_provider is not None else "PaddleOCRProvider"
                     try:
-                        with ProcessPoolExecutor(max_workers=active_workers, initializer=_ocr_worker_init, initargs=(self.ocr_lang, self.text_det_unclip_ratio)) as pool:
+                        with ProcessPoolExecutor(max_workers=active_workers, initializer=_ocr_worker_init, initargs=(self.ocr_lang, self.text_det_unclip_ratio, provider_cls_name)) as pool:
                             futures = {
                                 pool.submit(_ocr_page_worker_task, str(pdf_path), p[0], self.render_scale): p[0]
                                 for p in pages_needing_ocr

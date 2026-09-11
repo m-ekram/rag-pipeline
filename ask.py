@@ -28,6 +28,11 @@ import time
 from pathlib import Path
 from typing import Optional
 
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OMP_THREAD_LIMIT"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
@@ -341,7 +346,8 @@ def main():
     parser.add_argument("--chunk-size", type=int, default=200, help="Chunk size in words")
     parser.add_argument("--overlap", type=int, default=40, help="Chunk overlap in words")
     parser.add_argument("--max-pages", type=int, default=None, help="Limit number of pages to process from PDF (useful for quick testing)")
-    parser.add_argument("--workers", type=int, default=1, help="Number of OCR worker processes (default: 1 sequential)")
+    default_workers = max(1, (os.cpu_count() or 4) - 1)
+    parser.add_argument("--workers", type=int, default=default_workers, help=f"Number of OCR worker processes (default: {default_workers}, reserving 1 core for SSH/system)")
     parser.add_argument("--no-ocr-cache", "--reextract", action="store_true", help="Bypass OCR disk cache and force fresh extraction")
     parser.add_argument("--clear-cache", action="store_true", help="Purge disk extraction cache before extracting")
     parser.add_argument("--answer-lang", choices=["auto", "en", "hi", "ur"], default="auto", help="Response language override (default: auto)")
