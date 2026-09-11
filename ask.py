@@ -28,11 +28,6 @@ import time
 from pathlib import Path
 from typing import Optional
 
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OMP_THREAD_LIMIT"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
