@@ -374,8 +374,9 @@ class PDFExtractor:
                 else:
                     active_workers = min(self.workers, num_to_ocr)
                     print(f"[*] Processing {num_to_ocr} pages in parallel with {active_workers} worker processes...", flush=True)
-                    t_start_pool = time.perf_counter()
+                    ocr_lookup = {p[0]: p for p in pages_needing_ocr}
                     provider_cls_name = type(self._ocr_provider).__name__ if self._ocr_provider is not None else "PaddleOCRProvider"
+                    t_start_pool = time.perf_counter()
                     try:
                         with ProcessPoolExecutor(max_workers=active_workers, initializer=_ocr_worker_init, initargs=(self.ocr_lang, self.text_det_unclip_ratio, provider_cls_name)) as pool:
                             futures = {
