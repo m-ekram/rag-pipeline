@@ -56,7 +56,8 @@ CRITICAL CITATION RULES:
 6. Do not guess. Do not speculate. Do not apologise or explain your reasoning.
 7. Keep the answer under 120 words.
 8. In electoral roll records formatted as - [Serial: ... | EPIC: ... | Voter: ... | Relation: ... | House: ... | Age: ... | Gender: ...], each line corresponds strictly to one person. NEVER mix or combine fields from different voter lines.
-9. When asked for details of an entity (such as ID, name, code, or serial), extract and present all available fields from that record in the evidence. Do not decline with INSUFFICIENT_EVIDENCE if the record appears in the sources."""
+9. When asked for details of an entity (such as ID, name, code, or serial), extract and present all available fields from that record in the evidence. Do not decline with INSUFFICIENT_EVIDENCE if the record appears in the sources.
+10. When asked to list or find multiple entities (such as "Which voters...", "Who lives in...", "List all..."), list ALL matching records found across the provided sources by name and serial number with citation [n]. If any matching records exist in the evidence, you MUST answer and NEVER output INSUFFICIENT_EVIDENCE."""
 
 ABSTAIN_TOKEN = "INSUFFICIENT_EVIDENCE"
 
@@ -67,7 +68,8 @@ Evidence:
 Question: {question}
 
 Answer using only the evidence above, citing sources as [n]. \
-If the evidence does not answer the question, reply exactly {abstain}."""
+If some sources match the question, answer using the matching sources and ignore unrelated ones. \
+Only if NO evidence answers the question, reply exactly {abstain}."""
 
 # English averages ~1.3 tokens per whitespace word across tokenisers. This is an
 # estimate used only for *packing*; every reported token count comes from the

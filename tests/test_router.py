@@ -192,3 +192,57 @@ def test_router_bypasses_reranker_for_exact_intents(tmp_path):
     assert len(results) >= 1
     assert mock_reranker.called is False  # Must not call cross-encoder for exact intent!
     assert results[0].score >= 0.95
+
+
+def test_dual_script_query_expansion():
+    from retrieval.router import expand_query_scripts
+    s0_expanded = expand_query_scripts("S/0")
+    assert "एस/0" in s0_expanded or "एस/ओ" in s0_expanded
+
+    name_expanded = expand_query_scripts("Zahid Khan")
+    assert any("जाहिद" in t or "खान" in t for t in name_expanded)
+
+
+def test_router_relation_lookup(tmp_path):
+    router = IntentRouter(lexical=None, dense=None)
+    intent, params = router.classify("Which voters have father name Md Zahid Khan?")
+    assert intent == QueryIntent.RELATION_LOOKUP
+    assert "Zahid" in params["relation_name"]
+
+    db_path = tmp_path / "test_fts_rel.db"
+    fts = FTS5Index(db_path=db_path)
+    c1 = Chunk(chunk_id="c1", doc_id="d1", text="- [Serial: 1087 | Voter: तनवीर खान (Tanveer Khan) | Relation: पिता: मो० जाहिद खान (Md Zahid Khan) | House: एस/0]", ordinal=0)
+    c2 = Chunk(chunk_id="c2", doc_id="d1", text="- [Serial: 1088 | Voter: मो० अफरोज खान (Md Afroz Khan) | Relation: पिता: मो० जाहिद खान (Md Zahid Khan) | House: एस/ओ]", ordinal=1)
+    c3 = Chunk(chunk_id="c3", doc_id="d1", text="- [Serial: 1089 | Voter: परवेज खान (Parvez Khan) | Relation: पिता: मो० जाहिद खान (Md Zahid Khan) | House: 7/0]", ordinal=2)
+    c4 = Chunk(chunk_id="c4", doc_id="d1", text="- [Serial: 200 | Voter: श्याम कुमार | Relation: पिता: राम कुमार | House: 12]", ordinal=3)
+    fts.build([c1, c2, c3, c4])
+
+    router_with_fts = IntentRouter(lexical=fts, dense=None)
+    results = router_with_fts.retrieve("Which voters have father name Md Zahid Khan?")
+    assert len(results) == 3
+    found_serials = [r.chunk.text for r in results]
+    assert any("1087" in t for t in found_serials)
+    assert any("1088" in t for t in found_serials)
+    assert any("1089" in t for t in found_serials)
+
+
+def test_router_house_dual_script_retrieval(tmp_path):
+    router = IntentRouter(lexical=None, dense=None)
+    intent, params = router.classify("Who lives in house S/0?")
+    assert intent == QueryIntent.HOUSE_LOOKUP
+    assert params["house_num"] == "S/0"
+
+    db_path = tmp_path / "test_fts_house.db"
+    fts = FTS5Index(db_path=db_path)
+    c1 = Chunk(chunk_id="c1", doc_id="d1", text="- [Serial: 1087 | Voter: तनवीर खान | House: एस/0]", ordinal=0)
+    c2 = Chunk(chunk_id="c2", doc_id="d1", text="- [Serial: 1088 | Voter: मो० अफरोज खान | House: एस/ओ]", ordinal=1)
+    c3 = Chunk(chunk_id="c3", doc_id="d1", text="- [Serial: 200 | Voter: श्याम कुमार | House: 12]", ordinal=2)
+    fts.build([c1, c2, c3])
+
+    router_with_fts = IntentRouter(lexical=fts, dense=None)
+    results = router_with_fts.retrieve("Who lives in house S/0?")
+    assert len(results) >= 2
+    serials = [r.chunk.text for r in results]
+    assert any("1087" in t for t in serials)
+    assert any("1088" in t for t in serials)
+

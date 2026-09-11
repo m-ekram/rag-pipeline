@@ -205,11 +205,17 @@ class RAGPipeline:
                 latency_ms=timings,
             )
 
+        is_roster_query = any(
+            kw in question.lower()
+            for kw in ("which voters", "list all", "who all", "who lives in", "find all", "voters in", "सभी", "किन")
+        )
+        effective_max_evidence = max(self.evidence_limit, 30) if is_roster_query else self.evidence_limit
+
         built: BuiltPrompt = build_prompt(
             question,
             candidates,
             evidence_token_budget=self.evidence_token_budget,
-            max_evidence=self.evidence_limit,
+            max_evidence=effective_max_evidence,
             target_lang=target_lang,
         )
 

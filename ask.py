@@ -70,9 +70,36 @@ def load_file(
     use_ocr_cache: bool = True,
     clear_cache: bool = False,
 ) -> list[Document]:
-    """Load and extract text from a file (.pdf, .txt, .md, etc.)."""
+    """Load and extract text from a file or directory (.pdf, .txt, .md, etc.)."""
     if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {file_path}")
+        raise FileNotFoundError(f"File or directory not found: {file_path}")
+
+    if file_path.is_dir():
+        print(f"[*] Discovering documents in directory: {file_path}...")
+        supported_exts = {".pdf", ".txt", ".md", ".csv", ".json", ".log"}
+        all_files = sorted([p for p in file_path.rglob("*") if p.is_file() and p.suffix.lower() in supported_exts])
+        if not all_files:
+            raise ValueError(f"No supported document files ({', '.join(supported_exts)}) found in directory: {file_path}")
+        print(f"[+] Found {len(all_files)} documents to ingest in {file_path.name}/.")
+        all_docs = []
+        for idx, sub_path in enumerate(all_files, 1):
+            print(f"[{idx}/{len(all_files)}] Ingesting file: {sub_path.name}")
+            sub_docs = load_file(
+                sub_path,
+                ocr_lang=ocr_lang,
+                ocr_engine=ocr_engine,
+                max_pages=max_pages,
+                workers=workers,
+                use_ocr_cache=use_ocr_cache,
+                clear_cache=clear_cache,
+            )
+            # Ensure doc_ids are distinct across different files in directory
+            for d in sub_docs:
+                if "#p" not in d.doc_id and not d.doc_id.startswith(sub_path.stem):
+                    d.doc_id = f"{sub_path.stem}_{d.doc_id}"
+            all_docs.extend(sub_docs)
+        print(f"[+] Total documents/pages ingested from directory: {len(all_docs)}")
+        return all_docs
 
     suffix = file_path.suffix.lower()
 
@@ -119,6 +146,10 @@ def sanitize_collection_name(file_path: Path) -> str:
     """Ensure collection name meets Qdrant conventions and is content-addressed."""
     clean = re.sub(r"[^a-zA-Z0-9_\-]", "_", file_path.stem)
     try:
+        if file_path.is_dir():
+            files = sorted([str(p.relative_to(file_path)) for p in file_path.rglob("*") if p.is_file()])
+            h = hashlib.sha256(("::".join(files)).encode("utf-8")).hexdigest()[:8]
+            return f"dir_{clean[:18]}_{h}"
         digest = hashlib.sha256(file_path.read_bytes()).hexdigest()[:8]
     except Exception:
         digest = "default"
@@ -364,10 +395,20 @@ def main():
 
     doc_path = Path(args.document)
 
+    if args.clear_cache:
+        import shutil
+        cache_dir = Path(__file__).resolve().parent / ".cache" / "extraction"
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            print("[+] Purged all extraction disk caches (.cache/extraction).")
+        args.reindex = True
+
     # Auto-detect Hindi language for electoral roll PDFs (always bilingual hin+eng for IDs & names)
-    if (args.ocr_lang in ("en", "hi")) and "HIN" in doc_path.name.upper():
+    is_hindi_electoral = "HIN" in doc_path.name.upper() or (doc_path.is_dir() and any("HIN" in p.name.upper() for p in doc_path.rglob("*.pdf")))
+    if (args.ocr_lang in ("en", "hi")) and is_hindi_electoral:
         args.ocr_lang = "hin+eng"
-        print("[*] Auto-detected Hindi electoral document: set OCR language to 'hin+eng' (bilingual Hindi names + English IDs)")
+        print("[*] Auto-detected Hindi electoral document(s): set OCR language to 'hin+eng' (bilingual Hindi names + English IDs)")
     elif args.ocr_lang == "hi":
         args.ocr_lang = "hin+eng"
 

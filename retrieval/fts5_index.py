@@ -166,6 +166,128 @@ class FTS5Index:
 
         return scored
 
+    def search_field(
+        self,
+        field_name: str,
+        terms: Sequence[str],
+        limit: int = 50,
+        doc_id: Optional[str] = None,
+    ) -> list[ScoredChunk]:
+        """Exhaustively search chunks for records matching specific fields and expanded terms.
+
+        Uses FTS5 Boolean expressions and fallback prefix / SQL LIKE matching to ensure zero missed records.
+        """
+        if not terms:
+            return []
+
+        field_markers = []
+        fn_lower = field_name.lower()
+        if fn_lower in ("relation", "father", "husband", "mother", "rel"):
+            field_markers = ["Relation", "पिता", "पति", "माता", "संबंध"]
+        elif fn_lower in ("house", "makan", "ghar"):
+            field_markers = ["House", "मकान", "घर"]
+        elif fn_lower in ("voter", "name", "naam"):
+            field_markers = ["Voter", "नाम"]
+        elif fn_lower in ("serial", "kramank"):
+            field_markers = ["Serial", "क्रमांक", "क्रम"]
+        else:
+            field_markers = [field_name]
+
+        def quote_term(t: str) -> str:
+            t = t.strip()
+            if not t:
+                return ""
+            if any(ch in t for ch in "/-_.") or " " in t:
+                return f'"{t}"'
+            return t
+
+        fm_clause = " OR ".join(f'"{m}"' if " " in m else m for m in field_markers)
+
+        # Check if terms is a list of groups (e.g. [["Zahid", "जाहिद"], ["Khan", "खान"]])
+        queries_to_try = []
+        if terms and isinstance(terms[0], (list, tuple, set)):
+            group_clauses = []
+            for grp in terms:
+                clauses = [quote_term(str(t)) for t in grp if quote_term(str(t))]
+                if clauses:
+                    group_clauses.append("(" + " OR ".join(clauses) + ")")
+            if group_clauses:
+                queries_to_try.append(f"({fm_clause}) AND " + " AND ".join(group_clauses))
+                queries_to_try.append(" AND ".join(group_clauses))
+        else:
+            term_clauses = [quote_term(str(t)) for t in terms if quote_term(str(t))]
+            if not term_clauses:
+                return []
+            terms_or = " OR ".join(term_clauses)
+            queries_to_try.append(f"({fm_clause}) AND ({terms_or})")
+            queries_to_try.append(f"({terms_or})")
+
+        seen_ids = set()
+        results: list[ScoredChunk] = []
+
+        for fts_q in queries_to_try:
+            sql = """
+                SELECT chunk_id, text, metadata_json, bm25(chunks_fts) as rank_score
+                FROM chunks_fts
+                WHERE chunks_fts MATCH ?
+            """
+            params: list[object] = [fts_q]
+            if doc_id is not None:
+                sql += " AND doc_id = ?"
+                params.append(doc_id)
+            sql += " ORDER BY rank_score ASC LIMIT ?"
+            params.append(limit)
+
+            try:
+                cursor = self.con.execute(sql, params)
+                rows = cursor.fetchall()
+                for cid, text, meta_json, raw_score in rows:
+                    if cid in seen_ids:
+                        continue
+                    seen_ids.add(cid)
+                    payload = json.loads(meta_json) if meta_json else {}
+                    chunk_fields = {f for f in Chunk.__dataclass_fields__}
+                    chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
+                    chunk_kwargs.setdefault("chunk_id", cid)
+                    chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
+                    chunk_kwargs.setdefault("text", text)
+                    chunk_kwargs.setdefault("ordinal", 0)
+                    chunk = Chunk(**chunk_kwargs)
+                    score = 1.0 - (len(results) * 0.005)
+                    results.append(ScoredChunk(chunk_id=cid, score=score, rank=len(results) + 1, chunk=chunk))
+                    if len(results) >= limit:
+                        return results
+            except sqlite3.OperationalError as e:
+                logger.debug("FTS5 search_field query '%s' error: %s", fts_q, e)
+                continue
+
+        # Fallback to SQL LIKE matching for exact substring safety
+        if not results:
+            for term in terms:
+                clean_term = term.strip('"\'')
+                if len(clean_term) < 2:
+                    continue
+                sql = "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE ? LIMIT ?"
+                cursor = self.con.execute(sql, (f"%{clean_term}%", limit))
+                for cid, text, meta_json in cursor.fetchall():
+                    if cid in seen_ids:
+                        continue
+                    seen_ids.add(cid)
+                    payload = json.loads(meta_json) if meta_json else {}
+                    chunk_fields = {f for f in Chunk.__dataclass_fields__}
+                    chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
+                    chunk_kwargs.setdefault("chunk_id", cid)
+                    chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
+                    chunk_kwargs.setdefault("text", text)
+                    chunk_kwargs.setdefault("ordinal", 0)
+                    chunk = Chunk(**chunk_kwargs)
+                    score = 1.0 - (len(results) * 0.005)
+                    results.append(ScoredChunk(chunk_id=cid, score=score, rank=len(results) + 1, chunk=chunk))
+                    if len(results) >= limit:
+                        return results
+
+        return results
+
     def get_by_page(self, page_num: int, doc_id: Optional[str] = None) -> list[Chunk]:
         """Fetch all chunks belonging to a specific page number."""
         sql = "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE page_num = ?"
