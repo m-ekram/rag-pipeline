@@ -369,10 +369,12 @@ def main():
 
     doc_path = Path(args.document)
 
-    # Auto-detect Hindi language for electoral roll PDFs
-    if args.ocr_lang == "en" and "HIN" in doc_path.name.upper():
-        args.ocr_lang = "hi"
-        print(f"[*] Auto-detected Hindi electoral document: set OCR language to 'hi'")
+    # Auto-detect Hindi language for electoral roll PDFs (always bilingual hin+eng for IDs & names)
+    if (args.ocr_lang in ("en", "hi")) and "HIN" in doc_path.name.upper():
+        args.ocr_lang = "hin+eng"
+        print("[*] Auto-detected Hindi electoral document: set OCR language to 'hin+eng' (bilingual Hindi names + English IDs)")
+    elif args.ocr_lang == "hi":
+        args.ocr_lang = "hin+eng"
 
     # Auto-detect Urdu language
     if args.ocr_lang == "en" and any(k in str(doc_path).lower() for k in ["urdu", "bang-i-dara", "iqbal"]):

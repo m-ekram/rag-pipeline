@@ -60,13 +60,24 @@ class VoterRecord:
         if self.epic:
             parts.append(f"EPIC: {self.epic}")
         if self.name:
-            latin = transliterate_devanagari(self.name)
-            if latin and latin.lower() != self.name.lower():
-                parts.append(f"Voter: {self.name} ({latin})")
+            clean_name = re.sub(r"\s+(?:है|हु|हूँ|ee)$", "", self.name).strip(" .हु|:：;")
+            latin = transliterate_devanagari(clean_name)
+            if latin and latin.lower() != clean_name.lower():
+                parts.append(f"Voter: {clean_name} ({latin})")
             else:
-                parts.append(f"Voter: {self.name}")
+                parts.append(f"Voter: {clean_name}")
         if self.relation:
-            parts.append(f"Relation: {self.relation}")
+            clean_rel = re.sub(r"\s+(?:है|हु|हूँ|ee)$", "", self.relation).strip(" .हु|:：;")
+            m_rel_split = re.match(r"^([^:]+:\s*)(.+)$", clean_rel)
+            if m_rel_split:
+                rel_hdr, rel_val = m_rel_split.groups()
+                rel_latin = transliterate_devanagari(rel_val)
+                if rel_latin and rel_latin.lower() != rel_val.lower():
+                    parts.append(f"Relation: {rel_hdr}{rel_val} ({rel_latin})")
+                else:
+                    parts.append(f"Relation: {clean_rel}")
+            else:
+                parts.append(f"Relation: {clean_rel}")
         if self.house:
             clean_house = re.sub(r"(?:फोटो\s*उपलब्ध|फोटो|उपलब्ध|[|:;._])", " ", self.house).strip()
             core_house = clean_house.split()[0] if clean_house.split() else clean_house
@@ -154,8 +165,12 @@ _CONSONANTS = {
 
 _NAME_OVERRIDES = {
     "फ़राज़": "Faraz", "फराज": "Faraz", "फेराक": "Faraz",
+    "अफरोज": "Afroz", "अफरोज़": "Afroz", "अफ़रोज़": "Afroz", "अफ़रोज": "Afroz",
+    "जाहिद": "Zahid", "ज़ाहीद": "Zahid", "जाहीद": "Zahid", "ज़ाहिद": "Zahid",
+    "खान": "Khan", "ख़ान": "Khan", "कान": "Khan",
     "अहमद": "Ahmad", "अहमद्": "Ahmad", "अहमदर": "Ahmad",
-    "मोहम्मद": "Mohammad", "मो०": "Md", "मो": "Mohd",
+    "मोहम्मद": "Mohammad", "मो०": "Md", "मो": "Md", "मो.": "Md", "मो0": "Md",
+    "तनवीर": "Tanveer", "परवेज": "Parvez", "परवेज़": "Parvez",
     "कुमार": "Kumar", "कुमारी": "Kumari", "देवी": "Devi",
     "गुप्ता": "Gupta", "शर्मा": "Sharma", "सिंह": "Singh",
     "कश्यप": "Kashyap", "राय": "Rai", "प्रसाद": "Prasad",
@@ -171,7 +186,7 @@ def transliterate_devanagari(text: str) -> str:
     res_words = []
     for word in words:
         clean_w = word.strip(" ,.:;| हु-")
-        if not clean_w:
+        if not clean_w or clean_w in ("है", "हु", "हूँ", "था", "थी", "का", "की", "के", "ee", "rare", "ste"):
             continue
         if clean_w in _NAME_OVERRIDES:
             res_words.append(_NAME_OVERRIDES[clean_w])

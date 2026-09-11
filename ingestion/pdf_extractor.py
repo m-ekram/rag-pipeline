@@ -74,8 +74,10 @@ def _ocr_page_worker_task(pdf_path_str: str, page_number: int, render_scale: flo
             image_path = Path(temp.name)
         try:
             pixmap.save(str(image_path))
+            t_page_start = time.perf_counter()
             result = _WORKER_OCR.extract_page(str(image_path), page_number)
-            return page_number, result.text, result.confidence, result.engine
+            elapsed = time.perf_counter() - t_page_start
+            return page_number, result.text, result.confidence, result.engine, elapsed
         finally:
             image_path.unlink(missing_ok=True)
     finally:
@@ -384,7 +386,7 @@ class PDFExtractor:
                                 for p in pages_needing_ocr
                             }
                             for fut in as_completed(futures):
-                                page_num, ocr_text, ocr_conf, ocr_eng = fut.result()
+                                page_num, ocr_text, ocr_conf, ocr_eng, page_elapsed = fut.result()
                                 _, native_result, native_quality, cache_key = ocr_lookup[page_num]
                                 if force_ocr:
                                     final = PreprocessedText(
@@ -419,7 +421,8 @@ class PDFExtractor:
                                     }
                                 self.cache.put(cache_key, {"text": final.text, "metadata": metadata})
                                 conf_str = f"conf: {ocr_conf:.2f}" if ocr_conf is not None else ""
-                                print(f"  [+] Page {page_num}/{total_pages}: OCR completed ({len(final.text)} chars, {conf_str}).", flush=True)
+                                elapsed_str = f" in {page_elapsed:.1f}s" if page_elapsed is not None else ""
+                                print(f"  [+] Page {page_num}/{total_pages}: OCR completed{elapsed_str} ({len(final.text)} chars, {conf_str}).", flush=True)
                                 text = clean_text(final.text) if clean else final.text
                                 if text.strip():
                                     page_docs[page_num] = Document(
