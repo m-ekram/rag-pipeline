@@ -61,6 +61,13 @@ def test_get_by_page_can_filter_to_one_document(tmp_path):
     assert [c.chunk_id for c in index.get_by_page(66, doc_id="pmp#p66")] == ["a::0"]
 
 
+def test_read_only_views_follow_index_order(tmp_path):
+    index = _index(tmp_path)
+    assert index.chunk_ids == ["a::0", "b::0", "c::0"]
+    assert index.matrix.shape == (3, 3)
+    assert np.allclose(np.linalg.norm(index.matrix, axis=1), 1.0, atol=1e-3)
+
+
 def test_recreate_empties_the_index(tmp_path):
     index = _index(tmp_path)
     index.recreate()

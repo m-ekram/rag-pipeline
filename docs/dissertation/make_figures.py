@@ -203,6 +203,96 @@ def run_comparison(runs: list[dict]) -> Path | None:
     return _save(fig, "fig_run_comparison.png")
 
 
+VARIANT_LABELS = {"bm25": "BM25", "dense": "Dense (e5)", "hybrid": "Hybrid (RRF)",
+                  "hybrid_rerank": "Hybrid + rerank"}
+SIGNAL_LABELS = {"rerank": "Reranker score", "rrf": "RRF score", "dense": "Dense cosine",
+                 "bm25": "BM25 score"}
+PALETTE = ["#9DB4C0", "#5C8DA6", ACCENT, INK]
+
+
+def fiqa_retrieval(summary: dict) -> Path:
+    """nDCG@10 per retriever at each contamination level, with 95% bootstrap CIs."""
+    levels = summary["levels"]
+    variants = list(VARIANT_LABELS)
+    width = 0.8 / len(variants)
+    fig, ax = plt.subplots(figsize=(9, 4.2))
+    for i, variant in enumerate(variants):
+        means = [lv["variants"][variant]["ndcg10"]["mean"] for lv in levels]
+        lo = [m - lv["variants"][variant]["ndcg10"]["lo"] for m, lv in zip(means, levels)]
+        hi = [lv["variants"][variant]["ndcg10"]["hi"] - m for m, lv in zip(means, levels)]
+        xs = [x + (i - (len(variants) - 1) / 2) * width for x in range(len(levels))]
+        bars = ax.bar(xs, means, width, yerr=[lo, hi], capsize=3, color=PALETTE[i],
+                      label=VARIANT_LABELS[variant])
+        ax.bar_label(bars, fmt="%.3f", fontsize=7, padding=6)
+    ax.set_xticks(range(len(levels)),
+                  [f"ρ = {lv['rho']:.1f}\n{lv['docs']:,} docs" for lv in levels])
+    ax.set_ylabel("nDCG@10 (FiQA test, 648 queries)")
+    ax.set_title("Retrieval quality by method and corpus contamination (95% bootstrap CI)", fontsize=10)
+    ax.legend(fontsize=8, ncol=4, loc="upper center", bbox_to_anchor=(0.5, -0.18))
+    ax.grid(axis="y", alpha=0.3)
+    return _save(fig, "fig_fiqa_retrieval.png")
+
+
+def fiqa_risk_coverage(summary: dict) -> Path:
+    """Risk-coverage curves of the deployed pipeline, gated on the reranker score."""
+    fig, ax = plt.subplots(figsize=(7.5, 4.2))
+    for i, level in enumerate(summary["levels"]):
+        curve = level["selective"]["rerank"]["curve"]
+        colour = PALETTE[min(i + 1, len(PALETTE) - 1)]
+        ax.plot(curve["coverage"], curve["risk"], color=colour, lw=1.8,
+                label=f"ρ = {level['rho']:.1f} (AURC {level['selective']['rerank']['aurc']:.3f})")
+        ax.axhline(level["ungated_risk"], color=colour, lw=0.8, ls="--")
+    ax.set_xlabel("coverage (share of questions answered)")
+    ax.set_ylabel("selective risk (1 − Hit@5)")
+    ax.set_xlim(0, 1)
+    ax.set_title("Risk–coverage of hybrid + rerank; dashed = no gate", fontsize=10)
+    ax.legend(fontsize=8)
+    ax.grid(alpha=0.3)
+    return _save(fig, "fig_fiqa_risk_coverage.png")
+
+
+def fiqa_signals(summary: dict) -> Path:
+    """AURC of each confidence signal (lower is better) at each level."""
+    levels = summary["levels"]
+    signals = list(SIGNAL_LABELS)
+    width = 0.8 / len(signals)
+    fig, ax = plt.subplots(figsize=(8, 3.8))
+    for i, signal in enumerate(signals):
+        values = [lv["selective"][signal]["aurc"] for lv in levels]
+        xs = [x + (i - (len(signals) - 1) / 2) * width for x in range(len(levels))]
+        bars = ax.bar(xs, values, width, color=PALETTE[i], label=SIGNAL_LABELS[signal])
+        ax.bar_label(bars, fmt="%.3f", fontsize=7)
+    ax.set_xticks(range(len(levels)), [f"ρ = {lv['rho']:.1f}" for lv in levels])
+    ax.set_ylabel("AURC (lower is better)")
+    ax.set_title("Which score best predicts a retrieval failure?", fontsize=10)
+    ax.legend(fontsize=8, ncol=2)
+    ax.grid(axis="y", alpha=0.3)
+    return _save(fig, "fig_fiqa_signals.png")
+
+
+def answer_quality(evaluation: dict) -> Path:
+    """Answer accuracy by question type, and abstention on unanswerable questions."""
+    s = evaluation["summary"]
+    groups = [(f"{t.replace('_', ' ')} (n={v['n']})", v) for t, v in s["by_type"].items()]
+    groups.append((f"all answerable (n={s['accuracy']['n']})", s["accuracy"]))
+    groups.append((f"declined unanswerable (n={s['abstain_when_unanswerable']['n']})",
+                   s["abstain_when_unanswerable"]))
+    fig, ax = plt.subplots(figsize=(8, 3.6))
+    names = [g[0] for g in groups]
+    rates = [(g[1]["rate"] or 0) * 100 for g in groups]
+    lo = [r - (g[1]["lo"] or 0) * 100 for r, g in zip(rates, groups)]
+    hi = [(g[1]["hi"] or 0) * 100 - r for r, g in zip(rates, groups)]
+    bars = ax.barh(names, rates, xerr=[lo, hi], capsize=3,
+                   color=[ACCENT] * (len(groups) - 1) + [WARM])
+    ax.bar_label(bars, fmt="%.0f%%", fontsize=8, padding=14)
+    ax.set_xlim(0, 110)
+    ax.invert_yaxis()
+    ax.set_xlabel("% (Wilson 95% CI)")
+    ax.set_title(f"Answer quality on labelled questions — {evaluation.get('backend')}", fontsize=10)
+    ax.grid(axis="x", alpha=0.3)
+    return _save(fig, "fig_answer_quality.png")
+
+
 def _save(fig, name: str) -> Path:
     FIGURES.mkdir(parents=True, exist_ok=True)
     path = FIGURES / name
@@ -220,6 +310,15 @@ def main() -> int:
     rerankers(bench)
     index_time(runs)
     run_comparison(runs)
+    fiqa = DATA / "fiqa_benchmark_summary.json"
+    if fiqa.exists():
+        summary = json.loads(fiqa.read_text(encoding="utf-8"))
+        fiqa_retrieval(summary)
+        fiqa_risk_coverage(summary)
+        fiqa_signals(summary)
+    evaluations = sorted(DATA.glob("answer_eval_*.json"))
+    if evaluations:
+        answer_quality(json.loads(evaluations[-1].read_text(encoding="utf-8")))
     for backend in ("ollama", "groq"):
         run = _latest(runs, backend)
         if run:

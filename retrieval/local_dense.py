@@ -102,6 +102,20 @@ class LocalDenseIndex:
         os.replace(tmp_vectors, self._vector_path)
         os.replace(tmp_payloads, self._payload_path)
 
+    # -- read-only views (evaluation code searches sub-matrices) ---------
+
+    @property
+    def chunk_ids(self) -> list[str]:
+        """Chunk ids in index order."""
+        return [p.get("chunk_id", "") for p in self._payloads]
+
+    @property
+    def matrix(self) -> np.ndarray:
+        """The (n, d) float32 matrix of unit vectors, in index order."""
+        if self._vectors is None:
+            return np.empty((0, 0), dtype=np.float32)
+        return self._vectors
+
     # -- the DenseIndex interface ----------------------------------------
 
     def exists(self) -> bool:
