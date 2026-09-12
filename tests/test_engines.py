@@ -135,6 +135,20 @@ def test_mixed_folder_keeps_the_master_plans_tables(tmp_path, monkeypatch):
     assert any(c.doc_id == "roll#p3" for c in fake.indexed)
 
 
+def test_reranker_follows_the_share_of_each_script():
+    """A few quoted Hindi words used to put an English report on the 12-layer
+    multilingual reranker, 2-4x slower per question."""
+    import ask
+    from rerank.cross_encoder import DEFAULT_MODEL, MULTILINGUAL_LIGHT
+
+    english = Document(doc_id="pmp#p1", text="Residential land use is proposed at 55 percent. " * 20
+                       + "मास्टर प्लान")
+    urdu = Document(doc_id="u#p1", text="یہ اردو کی ایک کتاب ہے " * 20)
+    assert ask._choose_reranker([english]) == DEFAULT_MODEL
+    assert ask._choose_reranker([ROLL_PAGE]) == MULTILINGUAL_LIGHT
+    assert ask._choose_reranker([urdu]) is None
+
+
 def test_unchanged_corpus_is_not_re_embedded(tmp_path, monkeypatch):
     fake = _FakeDense()
     _build([TABLE_PAGE], fake, tmp_path, monkeypatch)

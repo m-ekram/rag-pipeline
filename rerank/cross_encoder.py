@@ -23,10 +23,11 @@ DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 MULTILINGUAL_LIGHT = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 MULTILINGUAL_BASE = "BAAI/bge-reranker-base"
 
-# Query + passage tokens scored per pair. Attention cost grows with the square
-# of the length, so an uncapped 512-token pair costs ~1.8x a 384-token one on
-# CPU; child chunks are ~200 words, so 384 rarely truncates anything.
-DEFAULT_MAX_LENGTH = 384
+# Query + passage tokens scored per pair. Measured on an i5-8265U over 15
+# ~280-token candidates: the 12-layer multilingual model took 4.3 s at 384 and
+# 2.2 s at 256; the 6-layer English one ~1.0 s either way. The leading 256
+# tokens of a ~200-word child chunk carry its topic, which is what ranking needs.
+DEFAULT_MAX_LENGTH = 256
 
 
 def _sigmoid(x: float) -> float:

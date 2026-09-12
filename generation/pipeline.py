@@ -26,14 +26,18 @@ from retrieval.types import ScoredChunk
 
 logger = logging.getLogger(__name__)
 
-# Settings tuned for an 8B model on CPU, where prompt evaluation dominates.
-# A 3000-token evidence budget is ~5 chunks of 200 words; on CPU that alone can
-# cost 30-60s before a single output token appears. The grounded-answer prompt
-# caps answers at 120 words, so 256 output tokens is already generous.
+# Settings for a model running on CPU, where reading the prompt dominates.
+# Measured on an i5-8265U, qwen2.5:3b reads ~25-30 prompt tokens/s: a
+# 1,600-token prompt waited ~60 s for its first token. Ollama caches the
+# unchanged system prompt between questions, so the evidence is what each
+# question pays for; it is capped at ~700 tokens, and a matching paragraph is
+# not swapped for its whole 500-word section. The grounded-answer prompt caps
+# answers at 120 words, so 256 output tokens is already generous.
 LOCAL_PRESET = {
     "evidence_limit": 3,
-    "evidence_token_budget": 1200,
+    "evidence_token_budget": 700,
     "max_answer_tokens": 256,
+    "max_parent_tokens": 300,
 }
 
 # Router intents whose answer is a list of every matching record. The normal
@@ -112,6 +116,7 @@ class RAGPipeline:
         max_answer_tokens: int = 512,
         roster_evidence_limit: int = 30,
         roster_token_budget: int = 3000,
+        max_parent_tokens: Optional[int] = None,
     ):
         self.retriever = retriever
         self.gate = gate
@@ -125,6 +130,9 @@ class RAGPipeline:
         # in the prompt; the limits above are sized for a single best answer.
         self.roster_evidence_limit = roster_evidence_limit
         self.roster_token_budget = roster_token_budget
+        # Largest parent (table, section, household) that replaces a matching
+        # child in the prompt; None means always use the parent.
+        self.max_parent_tokens = max_parent_tokens
 
     @classmethod
     def for_local_model(cls, retriever, gate: ThresholdGate, **kwargs):
@@ -259,6 +267,7 @@ class RAGPipeline:
             ),
             max_evidence=evidence_limit,
             target_lang=target_lang,
+            max_parent_tokens=self.max_parent_tokens,
         )
 
         complete_kwargs: dict[str, Any] = {

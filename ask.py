@@ -214,6 +214,10 @@ def sanitize_collection_name(file_path: Path) -> str:
 _MANIFEST_DIR = Path(__file__).resolve().parent / ".cache" / "index_manifests"
 _DEVANAGARI = re.compile("[ऀ-ॿ]")
 _ARABIC_SCRIPT = re.compile("[؀-ۿ]")
+_LATIN = re.compile("[A-Za-z]")
+# Share of Devanagari/Arabic letters above which the multilingual reranker is
+# worth its cost. Hindi rolls are mostly Devanagari; the Master Plan is <1%.
+_NON_LATIN_SHARE = 0.15
 
 
 def _corpus_fingerprint(chunks: list[Chunk], embedder_name: str) -> str:
@@ -243,11 +247,18 @@ def _choose_reranker(docs: list[Document]) -> Optional[str]:
     trained on mMARCO's Hindi. No available cross-encoder covers Urdu, so an
     Urdu-only corpus ranks with multilingual dense + FTS5 alone.
     """
-    indic = any(_DEVANAGARI.search(d.text) for d in docs)
-    arabic = any(_ARABIC_SCRIPT.search(d.text) for d in docs)
-    if arabic and not indic:
+    # Judged by share of letters, not presence: the Master Plan quotes a few
+    # Hindi words, and "any Devanagari" put it on the 12-layer multilingual
+    # model, 2-4x slower per question than the English one.
+    indic = sum(len(_DEVANAGARI.findall(d.text)) for d in docs)
+    arabic = sum(len(_ARABIC_SCRIPT.findall(d.text)) for d in docs)
+    latin = sum(len(_LATIN.findall(d.text)) for d in docs)
+    share = (indic + arabic) / max(indic + arabic + latin, 1)
+    if share < _NON_LATIN_SHARE:
+        return DEFAULT_MODEL
+    if arabic > indic:
         return None
-    return MULTILINGUAL_LIGHT if indic or arabic else DEFAULT_MODEL
+    return MULTILINGUAL_LIGHT
 
 
 def _pick_ollama(model: Optional[str]) -> Optional[OllamaBackend]:

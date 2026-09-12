@@ -232,6 +232,7 @@ def test_tesseract_page_does_not_report_the_previous_pages_confidence(tmp_path, 
 
     fake = types.SimpleNamespace(image_to_string=lambda image, lang, config: "Serial 12")
     monkeypatch.setitem(sys.modules, "pytesseract", fake)
+    monkeypatch.setattr("ingestion.ocr._configure_tesseract", lambda module: "")
     image = tmp_path / "page.png"
     Image.new("RGB", (40, 20), "white").save(image)
 
@@ -240,3 +241,17 @@ def test_tesseract_page_does_not_report_the_previous_pages_confidence(tmp_path, 
     result = engine.extract_page(str(image), page=2)
     assert result.text == "Serial 12"
     assert result.confidence is None
+
+
+def test_missing_tesseract_binary_is_reported_not_blank(monkeypatch):
+    """pytesseract without its binary raised on every page, and the fallback
+    turned that into empty text: a scanned roll 'extracted' as blank pages."""
+    import types
+
+    from ingestion import ocr
+
+    module = types.SimpleNamespace(pytesseract=types.SimpleNamespace(tesseract_cmd="tesseract"))
+    monkeypatch.setattr("shutil.which", lambda cmd: None)
+    monkeypatch.setattr(ocr, "_TESSERACT_LOCATIONS", ())
+    with pytest.raises(ocr.NoOCREngineAvailable):
+        ocr._configure_tesseract(module)

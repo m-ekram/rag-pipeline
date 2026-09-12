@@ -4,18 +4,19 @@ Chat interface for the RAG backend: pick a folder, pick an engine, ask.
 
 ## Run
 
-Two processes. The backend first:
+**Production — one process, one port.** Build the static UI once; FastAPI
+serves it from `web/out/` alongside the API:
 
 ```bash
-cd ..
-python -m uvicorn api.server:app --host 127.0.0.1 --port 8000
+corepack pnpm install
+corepack pnpm build                                   # writes web/out/
+cd .. && python -m uvicorn api.server:app --port 8000 # http://127.0.0.1:8000
 ```
 
-Then the frontend:
+**Development — hot reload.** Two processes: the backend as above, then
 
 ```bash
-pnpm install
-pnpm dev              # http://localhost:3000
+corepack pnpm dev     # http://localhost:3000, proxies /api/* to :8000
 ```
 
 If port 8000 is taken, point the proxy elsewhere:
@@ -26,8 +27,11 @@ RAG_API_URL=http://127.0.0.1:8100 pnpm dev
 
 ## How it talks to the backend
 
-`next.config.mjs` rewrites `/api/*` to FastAPI, so the browser only ever sees
-one origin — no CORS, and rewrites pass streaming bodies through unbuffered.
+In development `next.config.mjs` rewrites `/api/*` to FastAPI, so the browser
+only ever sees one origin (no CORS). The proxy's default 30 s timeout and
+Next's gzip compression both broke long streams — requests were cut off and
+tokens held back — so compression is off and the proxy timeout is 30 minutes.
+In production there is no proxy at all.
 
 Both long operations stream **newline-delimited JSON over POST** rather than
 SSE, because `EventSource` is GET-only and both need a request body. A network
@@ -38,8 +42,14 @@ a newline actually arrives.
 |---|---|---|
 | `GET /api/backends` | no | reachable engines + their models |
 | `GET /api/browse` | no | directory listing with data-file counts |
-| `POST /api/index` | yes | `progress` → `done` \| `error` |
-| `POST /api/chat` | yes | `status` → `token`… → `done` \| `error` |
+| `GET /api/health` | no | liveness + model warm-up state |
+| `POST /api/index` | yes | `status`/`progress`/`heartbeat` → `done` \| `error` |
+| `POST /api/chat` | yes | `status`/`heartbeat` → `token`… → `done` \| `error` |
+
+While the backend is busy but silent (OCR, loading a model, a CPU model reading
+the prompt) it sends a `heartbeat` every 2 s with the current stage and elapsed
+time; the UI shows it, so a slow step never looks like a hang. Aborting the
+fetch (or closing the tab) cancels the request on the server.
 
 ## Layout
 

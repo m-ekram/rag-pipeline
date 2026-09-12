@@ -127,6 +127,38 @@ def _run_paddle(engine, img_np) -> tuple[str, list[float]]:
     return "", []
 
 
+# Project-local language data (eng, hin, urd, osd), used when the install's own
+# tessdata folder lacks Hindi or Urdu.
+_PROJECT_TESSDATA = Path(__file__).resolve().parent.parent / ".cache" / "tessdata"
+# Where Windows installers put the binary; neither is added to PATH reliably.
+_TESSERACT_LOCATIONS = (
+    Path("C:/Program Files/Tesseract-OCR/tesseract.exe"),
+    Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+)
+
+
+def _configure_tesseract(pytesseract) -> str:
+    """Point pytesseract at a usable binary; return extra CLI options for language data.
+
+    Without a binary, pytesseract raises on every page and the fallback turned
+    that into empty text, so a scanned roll "extracted" as blank pages.
+    """
+    import shutil
+
+    if not shutil.which(pytesseract.pytesseract.tesseract_cmd):
+        found = next((p for p in _TESSERACT_LOCATIONS if p.exists()), None)
+        if found is None:
+            raise NoOCREngineAvailable(
+                "Tesseract is not installed: pytesseract found no tesseract binary. "
+                "Install it from https://github.com/UB-Mannheim/tesseract/wiki "
+                "(with Hindi/Urdu data), or run where PaddleOCR works."
+            )
+        pytesseract.pytesseract.tesseract_cmd = str(found)
+    if _PROJECT_TESSDATA.is_dir() and not os.environ.get("TESSDATA_PREFIX"):
+        return f' --tessdata-dir "{_PROJECT_TESSDATA}"'
+    return ""
+
+
 class RobustPaddleOCREngine:
     """Production Engine for ARM64 CPU:
     - Tier 1: PaddleOCR v4 (Lightweight CNN, ~1.2s/page, high Hindi precision)
@@ -226,12 +258,17 @@ class RobustPaddleOCREngine:
                         self._engine_used = "paddleocr"
                         return text
             except Exception as e:
-                logger.warning("[!] PaddleOCR error: %s. Falling back to Tier 2 (Tesseract)...", e)
+                # A broken Paddle build fails on every page (on Windows, Paddle
+                # 3.3's oneDNN path raises "ConvertPirAttribute2RuntimeAttribute
+                # not support"); retrying it per page only adds time and log noise.
+                self.paddle_available = False
+                logger.warning("[!] PaddleOCR error: %s. Using Tier 2 (Tesseract) from now on.", e)
 
         # Tier 2: Instant Native Tesseract Safety Net (hin+eng / urd / eng)
         try:
             import pytesseract
 
+            tessdata = _configure_tesseract(pytesseract)
             if self.lang == "urd":
                 tess_lang = "urd"
             elif "+" in getattr(self, "raw_lang", ""):
@@ -240,7 +277,8 @@ class RobustPaddleOCREngine:
                 tess_lang = "hin+eng"
             else:
                 tess_lang = "eng"
-            text = pytesseract.image_to_string(clean_image, lang=tess_lang, config="--psm 6")
+            text = pytesseract.image_to_string(clean_image, lang=tess_lang,
+                                               config=f"--psm 6{tessdata}")
             self._engine_used = "tesseract"
             return text.strip()
         except ImportError as exc:
@@ -252,6 +290,8 @@ class RobustPaddleOCREngine:
                 "  pip install paddleocr paddlepaddle   (then ENABLE_PADDLEOCR=1)\n"
                 "  pip install pytesseract  +  the tesseract binary"
             ) from exc
+        except NoOCREngineAvailable:
+            raise
         except Exception as e:
             logger.warning("[!] Tesseract fallback error: %s", e)
             return ""

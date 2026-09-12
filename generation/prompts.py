@@ -44,20 +44,25 @@ _LANG_UR_PATTERN = re.compile(
 # The abstention instruction is deliberately blunt and repeated: small models
 # comply far more reliably with an explicit refusal token than with a nuanced
 # "if you are unsure" hedge.
+# Kept short on purpose: on a CPU the model reads the prompt at ~30-40 tokens
+# per second, so every rule costs latency on every question. The previous
+# ten-rule prompt (~440 tokens, mostly about voter records) added ~10 s to
+# each answer even for documents with no voter records in them.
 SYSTEM_PROMPT = """\
 You answer questions using ONLY the numbered evidence provided.
 
 CRITICAL CITATION RULES:
-1. Cite evidence using ONLY the source indices [1], [2], etc., provided in the numbered evidence list below.
-2. NEVER output original paper reference numbers (such as [64], [66], [18], [21]) as citations.
-3. Every factual claim, number, and statistic must cite its source index [1], [2].
-4. If information is missing from the provided sources, state exactly: INSUFFICIENT_EVIDENCE.
-5. Answer in the language of the question. If the evidence is in another language (such as Hindi/Devanagari), comprehend and extract the facts from the evidence accurately into your answer.
-6. Do not guess. Do not speculate. Do not apologise or explain your reasoning.
-7. Keep the answer under 120 words.
-8. In electoral roll records formatted as - [Serial: ... | EPIC: ... | Voter: ... | Relation: ... | House: ... | Age: ... | Gender: ...], each line corresponds strictly to one person. NEVER mix or combine fields from different voter lines.
-9. When asked for details of an entity (such as ID, name, code, or serial), extract and present all available fields from that record in the evidence. Do not decline with INSUFFICIENT_EVIDENCE if the record appears in the sources.
-10. When asked to list or find multiple entities (such as "Which voters...", "Who lives in...", "List all..."), list ALL matching records found across the provided sources by name and serial number with citation [n]. If any matching records exist in the evidence, you MUST answer and NEVER output INSUFFICIENT_EVIDENCE."""
+1. Cite every fact with its evidence number, e.g. [1] or [2]. NEVER output original paper reference numbers (such as [64], [18]) as citations.
+2. If the evidence does not contain the answer, reply exactly: INSUFFICIENT_EVIDENCE.
+3. Answer in the language of the question; read Hindi/Devanagari evidence accurately.
+4. Do not guess, speculate, apologise or explain your reasoning. Keep the answer under 120 words.
+5. If asked what a page or section contains, summarise that evidence."""
+
+# Added only when the evidence holds voter records.
+ELECTORAL_RULES = """
+6. Each line "- [Serial: ... | EPIC: ... | Voter: ... | Relation: ... | House: ...]" is one person; never mix fields from different lines.
+7. For a question about one record (ID, name or serial), give every field of that record.
+8. For "which voters", "who lives in" or "list all" questions, list every matching record by name and serial with its citation; if any record matches, never reply INSUFFICIENT_EVIDENCE."""
 
 ABSTAIN_TOKEN = "INSUFFICIENT_EVIDENCE"
 
@@ -107,7 +112,15 @@ class BuiltPrompt:
         return None
 
 
-def _as_chunks(candidates: Iterable) -> list[Chunk]:
+def _as_chunks(candidates: Iterable, max_parent_tokens: Optional[int] = None) -> list[Chunk]:
+    """Resolve candidates to the text the model should read.
+
+    A child is replaced by its parent (the whole table, section or household)
+    for context — unless the parent is larger than `max_parent_tokens`. On a
+    CPU model every evidence token costs ~35 ms before the first answer token,
+    and a 500-word section in place of the matching paragraph was the largest
+    single cost in a local answer.
+    """
     chunks = []
     seen_parents = set()
     for item in candidates:
@@ -115,11 +128,15 @@ def _as_chunks(candidates: Iterable) -> list[Chunk]:
         if chunk is not None:
             parent_id = (chunk.metadata or {}).get("parent_id")
             parent_text = (chunk.metadata or {}).get("parent_text")
+            if parent_text and max_parent_tokens is not None \
+                    and estimate_tokens(parent_text) > max_parent_tokens:
+                parent_text = None  # read the child itself
 
-            # Avoid duplicating identical parent tables/sections if multiple child rows matched
-            if parent_id and parent_id in seen_parents:
+            # Avoid duplicating identical parent tables/sections if multiple
+            # child rows matched. Children read on their own are distinct text.
+            if parent_id and parent_text and parent_id in seen_parents:
                 continue
-            if parent_id:
+            if parent_id and parent_text:
                 seen_parents.add(parent_id)
 
             if parent_text and parent_text != chunk.text:
@@ -173,13 +190,14 @@ def build_prompt(
     max_evidence: int = 8,
     system: str = SYSTEM_PROMPT,
     target_lang: Optional[str] = None,
+    max_parent_tokens: Optional[int] = None,
 ) -> BuiltPrompt:
     """Pack the highest-ranked evidence that fits, in rank order.
 
     Chunks are included whole or not at all: a half-included chunk would let the
     model cite text it never received.
     """
-    chunks = _as_chunks(candidates)[:max_evidence]
+    chunks = _as_chunks(candidates, max_parent_tokens)[:max_evidence]
     labelled = _spans_documents(chunks)
 
     kept: list[Chunk] = []
@@ -237,6 +255,12 @@ def build_prompt(
             lang_instruction = "\nAnswer strictly in English language."
             if system == SYSTEM_PROMPT:
                 system = f"{system}\n9. You MUST write your final answer strictly in English language."
+
+    # Voter-record rules only when there are voter records for them to govern.
+    if system.startswith(SYSTEM_PROMPT) and any(
+        "[Serial:" in c.text or "EPIC:" in c.text for c in kept
+    ):
+        system = f"{system}{ELECTORAL_RULES}"
 
     prompt = PROMPT_TEMPLATE.format(
         evidence=format_evidence(kept, labelled=labelled) if kept else "(none)",
