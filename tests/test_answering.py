@@ -440,3 +440,48 @@ def test_warmup_is_a_no_op_for_backends_without_one():
     pipe = RAGPipeline(_FakeRetriever(CANDIDATES), ThresholdGate(0.5),
                        llm=_FakeLLM("x"))
     assert pipe.warmup() == 0.0
+
+
+# --- roster queries -----------------------------------------------------
+
+
+class _IntentRetriever(_FakeRetriever):
+    """Reports the classified intent after each retrieval, as IntentRouter does."""
+
+    def __init__(self, results, intent):
+        super().__init__(results)
+        self.last_intent = intent
+
+
+_ROSTER = [
+    _scored(f"v{i}::0", f"Serial {i} | Voter Name{i} | Relation: Father Zahid Khan", 1.0, i + 1)
+    for i in range(20)
+]
+
+
+def test_pipeline_keeps_every_record_for_a_roster_intent():
+    """A relation/house/list lookup answers with a list: capping evidence at the
+    usual top 5 silently dropped most matching voters from the prompt."""
+    from retrieval.router import QueryIntent
+
+    pipe = RAGPipeline(_IntentRetriever(_ROSTER, QueryIntent.RELATION_LOOKUP),
+                       ThresholdGate(0.5), llm=_FakeLLM("All of them [1]."))
+    result = pipe.answer("Which voters have father name Zahid Khan?")
+    assert len(result.prompt_evidence) == 20
+
+
+def test_reported_intent_beats_the_keyword_fallback():
+    from retrieval.router import QueryIntent
+
+    pipe = RAGPipeline(_IntentRetriever(_ROSTER, QueryIntent.HYBRID_SEMANTIC),
+                       ThresholdGate(0.5), llm=_FakeLLM("One [1]."))
+    result = pipe.answer("Which voters have father name Zahid Khan?")
+    assert len(result.prompt_evidence) == 5
+
+
+def test_token_estimate_counts_indic_script_by_character():
+    """Word counting priced a Hindi word like an English one (~1.3 tokens), but
+    English-trained vocabularies spend several tokens on it."""
+    hindi = "निर्वाचक नामावली मतदान केंद्र"
+    assert estimate_tokens(hindi) > int(len(hindi.split()) * 1.33) + 1
+    assert estimate_tokens("one two three") == int(3 * 1.33) + 1

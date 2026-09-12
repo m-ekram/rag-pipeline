@@ -111,6 +111,18 @@ class Chunker(Protocol):
     def chunk(self, document: Document) -> Iterator[Chunk]: ...
 
 
+# Document-level metadata that must not be copied onto every chunk.
+# `stitched_tables` holds the full text of each table stitched across pages; the
+# chunker reads it from the Document, and copied onto each chunk it bloated
+# every vector payload and FTS row on the page.
+_DOCUMENT_ONLY_KEYS = frozenset({"stitched_tables"})
+
+
+def _chunk_metadata(document: Document) -> dict:
+    """Copy of the document's metadata that is safe to store on each chunk."""
+    return {k: v for k, v in document.metadata.items() if k not in _DOCUMENT_ONLY_KEYS}
+
+
 def _build(document: Document, ordinal: int, words: list[str],
            start: int, end: int) -> Chunk:
     return Chunk(
@@ -124,7 +136,7 @@ def _build(document: Document, ordinal: int, words: list[str],
         section=document.section,
         start_word=start,
         end_word=end,
-        metadata=dict(document.metadata),
+        metadata=_chunk_metadata(document),
     )
 
 
@@ -341,7 +353,7 @@ class ElectoralRecordChunker:
                 start_word=0,
                 end_word=len(words),
                 metadata={
-                    **dict(document.metadata),
+                    **_chunk_metadata(document),
                     "block_type": "electoral_metadata",
                     "chunk_type": "electoral_metadata",
                     "page_num": 1,
@@ -369,7 +381,7 @@ class ElectoralRecordChunker:
                     start_word=0,
                     end_word=len(words),
                     metadata={
-                        **dict(document.metadata),
+                        **_chunk_metadata(document),
                         "block_type": "electoral_summary",
                         "chunk_type": "electoral_summary",
                         "page_num": page_num or document.metadata.get("page", 0),
@@ -437,7 +449,7 @@ class ElectoralRecordChunker:
                         start_word=0,
                         end_word=len(words),
                         metadata={
-                            **dict(document.metadata),
+                            **_chunk_metadata(document),
                             "block_type": "electoral_voter",
                             "chunk_type": "electoral_voter",
                             "house_num": house_num,
@@ -480,7 +492,7 @@ class ElectoralRecordChunker:
                 start_word=0,
                 end_word=len(words),
                 metadata={
-                    **dict(document.metadata),
+                    **_chunk_metadata(document),
                     "chunk_type": "electoral_records",
                     "voter_count": len(batch),
                 },
@@ -593,7 +605,7 @@ class StructureAwareParentChildChunker:
                             page=document.page,
                             section=document.section,
                             metadata={
-                                **dict(document.metadata),
+                                **_chunk_metadata(document),
                                 "block_type": "table",
                                 "caption": table_caption,
                                 "parent_id": parent_id,
@@ -625,7 +637,7 @@ class StructureAwareParentChildChunker:
                                 page=document.page,
                                 section=document.section,
                                 metadata={
-                                    **dict(document.metadata),
+                                    **_chunk_metadata(document),
                                     "block_type": "table",
                                     "caption": table_caption,
                                     "parent_id": parent_id,
@@ -659,48 +671,58 @@ class StructureAwareParentChildChunker:
             if not block_text:
                 continue
 
-            # Create parent for this text section
-            parent_text = block_text
-            parent_id = f"{document.doc_id}::p{parent_ordinal}"
-            parent_ordinal += 1
-
+            # Parents are sections of at most `text_parent_words`. An uncapped
+            # parent was the whole block, so one long page could fill the entire
+            # evidence budget on its own. A block that already fits stays whole.
             sentences = split_sentences(block_text)
-            current_words: list[str] = []
-            current_sentences: list[str] = []
+            if len(_WORD.findall(block_text)) <= self.text_parent_words:
+                sections = [(block_text, sentences)]
+            else:
+                sections = [
+                    (" ".join(run), run)
+                    for run in _pack_sentences(sentences, self.text_parent_words)
+                ]
 
-            def emit_child(s_list: list[str], c_ord: int) -> Chunk:
-                c_text = " ".join(s_list)
-                return Chunk(
-                    chunk_id=f"{document.doc_id}::{c_ord}",
-                    doc_id=document.doc_id,
-                    text=c_text,
-                    ordinal=c_ord,
-                    title=document.title,
-                    source=document.source,
-                    page=document.page,
-                    section=document.section,
-                    metadata={
-                        **dict(document.metadata),
-                        "block_type": "text",
-                        "parent_id": parent_id,
-                        "parent_text": parent_text,
-                    },
-                )
-
-            for s in sentences:
-                s_words = _WORD.findall(s)
-                if len(current_words) + len(s_words) > self.text_child_words and current_sentences:
-                    yield emit_child(current_sentences, child_ordinal)
+            for parent_text, section_sentences in sections:
+                parent_id = f"{document.doc_id}::p{parent_ordinal}"
+                parent_ordinal += 1
+                for child_sentences in _pack_sentences(section_sentences, self.text_child_words):
+                    yield Chunk(
+                        chunk_id=f"{document.doc_id}::{child_ordinal}",
+                        doc_id=document.doc_id,
+                        text=" ".join(child_sentences),
+                        ordinal=child_ordinal,
+                        title=document.title,
+                        source=document.source,
+                        page=document.page,
+                        section=document.section,
+                        metadata={
+                            **_chunk_metadata(document),
+                            "block_type": "text",
+                            "parent_id": parent_id,
+                            "parent_text": parent_text,
+                        },
+                    )
                     child_ordinal += 1
-                    current_sentences = [s]
-                    current_words = s_words
-                else:
-                    current_sentences.append(s)
-                    current_words.extend(s_words)
 
-            if current_sentences:
-                yield emit_child(current_sentences, child_ordinal)
-                child_ordinal += 1
+
+def _pack_sentences(sentences: list[str], max_words: int) -> Iterator[list[str]]:
+    """Group consecutive sentences into runs of at most `max_words` words.
+
+    A sentence longer than `max_words` forms a run of its own rather than
+    being split.
+    """
+    run: list[str] = []
+    run_words = 0
+    for sentence in sentences:
+        n = len(_WORD.findall(sentence))
+        if run and run_words + n > max_words:
+            yield run
+            run, run_words = [], 0
+        run.append(sentence)
+        run_words += n
+    if run:
+        yield run
 
 
 def chunk_documents(documents, chunker: Chunker) -> Iterator[Chunk]:

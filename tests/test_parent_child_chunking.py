@@ -109,3 +109,38 @@ def test_masterclass_upgrades():
     assert dual_house_number_display("३६") == "36 / ३६"
 
 
+def test_chunks_do_not_carry_the_pages_stitched_tables():
+    """Stitched tables are read from the Document; copied onto every chunk they
+    bloated each vector payload and FTS row on the page."""
+    from ingestion.chunking import FixedSizeChunker
+
+    doc = Document(
+        doc_id="pmp_p67",
+        text="Some narrative text about the plan.",
+        page=67,
+        metadata={"stitched_tables": {"Table 24": {"parent_text": "| a | b |"}},
+                  "extraction_method": "native"},
+    )
+    for chunker in (StructureAwareParentChildChunker(), FixedSizeChunker(chunk_size=50)):
+        chunks = list(chunker.chunk(doc))
+        assert chunks
+        for c in chunks:
+            assert "stitched_tables" not in c.metadata
+            assert c.metadata["extraction_method"] == "native"
+
+
+def test_text_parent_is_capped_at_text_parent_words():
+    """An uncapped parent was the whole text block, so one long page could fill
+    the entire evidence budget by itself."""
+    sentences = [f"Sentence number {i} talks about zoning rule {i} in detail." for i in range(120)]
+    doc = Document(doc_id="long_p1", text=" ".join(sentences), page=1)
+
+    chunker = StructureAwareParentChildChunker(text_child_words=40, text_parent_words=100)
+    chunks = list(chunker.chunk(doc))
+    assert len({c.metadata["parent_id"] for c in chunks}) > 1
+    for c in chunks:
+        parent = c.metadata["parent_text"]
+        assert len(parent.split()) <= 100
+        assert c.text in parent
+
+

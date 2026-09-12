@@ -75,11 +75,19 @@ Only if NO evidence answers the question, reply exactly {abstain}."""
 # estimate used only for *packing*; every reported token count comes from the
 # backend's own usage figures, never from here.
 TOKENS_PER_WORD = 1.33
+# Vocabularies trained mostly on English split Devanagari and Arabic script into
+# a token every character or two, so a Hindi word costs several tokens, not
+# ~1.3. Counting those scripts by word underestimated electoral-roll evidence
+# several-fold and overran the budget on exactly the slowest prompts.
+TOKENS_PER_NON_ASCII_CHAR = 0.5
 
 
 def estimate_tokens(text: str) -> int:
     """Cheap, backend-agnostic token estimate for budgeting."""
-    return int(len(text.split()) * TOKENS_PER_WORD) + 1
+    words = text.split()
+    ascii_words = sum(1 for w in words if w.isascii())
+    non_ascii_chars = sum(1 for ch in text if not ch.isascii())
+    return int(ascii_words * TOKENS_PER_WORD + non_ascii_chars * TOKENS_PER_NON_ASCII_CHAR) + 1
 
 
 @dataclass
