@@ -2,7 +2,6 @@ import logging
 import os
 import platform
 import sys
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Protocol
@@ -207,6 +206,11 @@ class RobustPaddleOCREngine:
         if image is None:
             return ""
 
+        # Per-page state. Without the reset, a page that falls back to Tesseract
+        # (or yields nothing) reports the previous Paddle page's confidence.
+        self._last_scores = []
+        self._engine_used = ""
+
         # Preprocess with table grid line subtraction for non-Urdu text
         clean_image = remove_table_grid_lines(image) if self.lang != "urd" else image
 
@@ -277,6 +281,10 @@ class RobustPaddleOCREngine:
                     confidence=confidence,
                     engine=engine_name,
                 )
+        except NoOCREngineAvailable:
+            # A missing engine is a setup error, not an unreadable page: turned
+            # into empty text here, it made every scanned PDF look blank.
+            raise
         except Exception as e:
             logger.warning("[!] Error reading image %s for OCR: %s", image_path, e)
             return OCRResult(text="", page=page, confidence=0.0, engine="error")

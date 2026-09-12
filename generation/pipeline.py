@@ -36,6 +36,17 @@ LOCAL_PRESET = {
     "max_answer_tokens": 256,
 }
 
+# Router intents whose answer is a list of every matching record. The normal
+# top-few evidence cap would silently truncate that list, so they get a larger
+# cap and budget. Enum values rather than members, so this module does not
+# depend on the router.
+ROSTER_INTENTS = frozenset({"exhaustive_list", "relation_lookup", "house_lookup"})
+# Fallback for retrievers that do not report an intent.
+ROSTER_KEYWORDS = (
+    "which voters", "list all", "who all", "who lives in", "find all",
+    "voters in", "सभी", "किन",
+)
+
 
 @dataclass
 class AnswerResult:
@@ -99,6 +110,8 @@ class RAGPipeline:
         evidence_limit: int = 5,
         evidence_token_budget: int = 3000,
         max_answer_tokens: int = 512,
+        roster_evidence_limit: int = 30,
+        roster_token_budget: int = 3000,
     ):
         self.retriever = retriever
         self.gate = gate
@@ -108,6 +121,10 @@ class RAGPipeline:
         self.evidence_limit = evidence_limit
         self.evidence_token_budget = evidence_token_budget
         self.max_answer_tokens = max_answer_tokens
+        # List-style questions ("which voters...") need every matching record
+        # in the prompt; the limits above are sized for a single best answer.
+        self.roster_evidence_limit = roster_evidence_limit
+        self.roster_token_budget = roster_token_budget
 
     @classmethod
     def for_local_model(cls, retriever, gate: ThresholdGate, **kwargs):
@@ -154,6 +171,18 @@ class RAGPipeline:
                 return [parts[0].strip(), parts[1].strip()]
         return [question]
 
+    def _is_roster_query(self, question: str, intents) -> bool:
+        """Does the question ask for every matching record rather than the best one?
+
+        The retriever's reported intent is authoritative; the keyword list only
+        covers retrievers that report none.
+        """
+        known = [getattr(i, "value", i) for i in intents if i is not None]
+        if known:
+            return any(i in ROSTER_INTENTS for i in known)
+        lowered = question.lower()
+        return any(kw in lowered for kw in ROSTER_KEYWORDS)
+
     def answer(
         self,
         question: str,
@@ -165,6 +194,7 @@ class RAGPipeline:
 
         started = time.perf_counter()
         sub_queries = self._decompose_query(question)
+        intents = []
         if len(sub_queries) > 1:
             all_candidates = []
             seen_ids = set()
@@ -174,10 +204,20 @@ class RAGPipeline:
                     if cid not in seen_ids:
                         seen_ids.add(cid)
                         all_candidates.append(c)
+                intents.append(getattr(self.retriever, "last_intent", None))
             candidates = all_candidates
         else:
             candidates = self.retriever.retrieve(question, limit=self.candidate_limit)
+            intents.append(getattr(self.retriever, "last_intent", None))
         timings["retrieval"] = (time.perf_counter() - started) * 1000
+
+        # Decided before any truncation: slicing to the single-answer limit
+        # first is what capped list answers at 5 records.
+        roster = self._is_roster_query(question, intents)
+        evidence_limit = (
+            max(self.evidence_limit, self.roster_evidence_limit) if roster else self.evidence_limit
+        )
+
         # Only rerank if candidates were not already reranked or are not exact structural hits (score >= 0.95)
         has_exact_hits = any(getattr(c, "score", 0.0) >= 0.95 for c in candidates)
         retriever_reranks = getattr(self.retriever, "reranker", None) is not None
@@ -185,11 +225,11 @@ class RAGPipeline:
         if self.reranker is not None and candidates and not has_exact_hits and not retriever_reranks:
             started = time.perf_counter()
             candidates = self.reranker.rerank(
-                question, candidates, limit=self.evidence_limit
+                question, candidates, limit=evidence_limit
             )
             timings["rerank"] = (time.perf_counter() - started) * 1000
         else:
-            candidates = candidates[: self.evidence_limit]
+            candidates = candidates[:evidence_limit]
 
         gate_result = self.gate.decide(candidates)
 
@@ -205,17 +245,14 @@ class RAGPipeline:
                 latency_ms=timings,
             )
 
-        is_roster_query = any(
-            kw in question.lower()
-            for kw in ("which voters", "list all", "who all", "who lives in", "find all", "voters in", "सभी", "किन")
-        )
-        effective_max_evidence = max(self.evidence_limit, 30) if is_roster_query else self.evidence_limit
-
         built: BuiltPrompt = build_prompt(
             question,
             candidates,
-            evidence_token_budget=self.evidence_token_budget,
-            max_evidence=effective_max_evidence,
+            evidence_token_budget=(
+                max(self.evidence_token_budget, self.roster_token_budget)
+                if roster else self.evidence_token_budget
+            ),
+            max_evidence=evidence_limit,
             target_lang=target_lang,
         )
 

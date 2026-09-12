@@ -31,15 +31,13 @@ from typing import Optional
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
-from generation.abstention import Decision, ThresholdGate
-from generation.citations import render_citations
+from generation.abstention import ThresholdGate
 from console import use_utf8_console
 from generation.llm import GroqBackend, OllamaBackend, get_llm
 from generation.pipeline import RAGPipeline
 from ingestion.chunking import (
     ElectoralRecordChunker,
     FixedSizeChunker,
-    SentenceAwareChunker,
     StructureAwareParentChildChunker,
 )
 from ingestion.documents import Chunk, Document
@@ -49,15 +47,42 @@ from ingestion.pipeline import chunk_corpus
 from rerank.cross_encoder import (
     CrossEncoderReranker,
     DEFAULT_MODEL,
-    MULTILINGUAL_BASE,
     MULTILINGUAL_LIGHT,
 )
-from retrieval.bm25 import BM25Index
-from retrieval.cascade import LexicalFirstRetriever
 from retrieval.dense import DenseIndex
 from retrieval.embedder import Embedder
 from retrieval.fts5_index import FTS5Index
 from retrieval.router import IntentRouter
+
+
+def make_extractor(
+    *,
+    ocr_lang: str = "en",
+    ocr_engine: str = "auto",
+    workers: int = 1,
+    use_ocr_cache: bool = True,
+    clear_cache: bool = False,
+) -> PDFExtractor:
+    """Build the PDF extractor for one ingestion run.
+
+    Build it once and pass it to every `load_file` call: it owns the OCR
+    engine, and a fresh extractor per file reloaded the model (~5 s) for every
+    PDF in a folder.
+    """
+    provider = None
+    if ocr_engine.lower() == "tesseract":
+        from ingestion.ocr import TesseractOCRProvider
+        provider = TesseractOCRProvider(lang=ocr_lang)
+
+    extractor = PDFExtractor(
+        ocr_provider=provider,
+        ocr_lang=ocr_lang,
+        use_cache=use_ocr_cache,
+        workers=workers,
+    )
+    if clear_cache and hasattr(extractor.cache, "clear"):
+        extractor.cache.clear()
+    return extractor
 
 
 def load_file(
@@ -69,6 +94,7 @@ def load_file(
     workers: int = 1,
     use_ocr_cache: bool = True,
     clear_cache: bool = False,
+    extractor: Optional[PDFExtractor] = None,
 ) -> list[Document]:
     """Load and extract text from a file or directory (.pdf, .txt, .md, etc.)."""
     if not file_path.exists():
@@ -81,6 +107,13 @@ def load_file(
         if not all_files:
             raise ValueError(f"No supported document files ({', '.join(supported_exts)}) found in directory: {file_path}")
         print(f"[+] Found {len(all_files)} documents to ingest in {file_path.name}/.")
+        extractor = extractor or make_extractor(
+            ocr_lang=ocr_lang,
+            ocr_engine=ocr_engine,
+            workers=workers,
+            use_ocr_cache=use_ocr_cache,
+            clear_cache=clear_cache,
+        )
         all_docs = []
         for idx, sub_path in enumerate(all_files, 1):
             print(f"[{idx}/{len(all_files)}] Ingesting file: {sub_path.name}")
@@ -91,7 +124,7 @@ def load_file(
                 max_pages=max_pages,
                 workers=workers,
                 use_ocr_cache=use_ocr_cache,
-                clear_cache=clear_cache,
+                extractor=extractor,
             )
             # Ensure doc_ids are distinct across different files in directory
             for d in sub_docs:
@@ -108,19 +141,13 @@ def load_file(
         print(f"[*] Extracting text from PDF: {file_path.name}{page_info} (OCR engine: {ocr_engine}, lang: {ocr_lang}, workers: {workers}, cache: {use_ocr_cache})...")
         start = time.perf_counter()
         
-        provider = None
-        if ocr_engine.lower() == "tesseract":
-            from ingestion.ocr import TesseractOCRProvider
-            provider = TesseractOCRProvider(lang=ocr_lang)
-
-        extractor = PDFExtractor(
-            ocr_provider=provider,
+        extractor = extractor or make_extractor(
             ocr_lang=ocr_lang,
-            use_cache=use_ocr_cache,
+            ocr_engine=ocr_engine,
             workers=workers,
+            use_ocr_cache=use_ocr_cache,
+            clear_cache=clear_cache,
         )
-        if clear_cache and hasattr(extractor.cache, "clear"):
-            extractor.cache.clear()
 
         docs = list(extractor.extract(str(file_path), clean=True, max_pages=max_pages))
         elapsed = time.perf_counter() - start
@@ -142,6 +169,12 @@ def load_file(
         raise ValueError(f"Unsupported file format: {suffix}. Supported: .pdf, .txt, .md")
 
 
+# Part of every collection name. Bump it whenever chunk payloads change shape:
+# index reuse is decided by chunk count alone, so an old collection would
+# otherwise be served as-is.
+INDEX_VERSION = "v5"
+
+
 def sanitize_collection_name(file_path: Path) -> str:
     """Ensure collection name meets Qdrant conventions and is content-addressed."""
     clean = re.sub(r"[^a-zA-Z0-9_\-]", "_", file_path.stem)
@@ -149,11 +182,11 @@ def sanitize_collection_name(file_path: Path) -> str:
         if file_path.is_dir():
             files = sorted([str(p.relative_to(file_path)) for p in file_path.rglob("*") if p.is_file()])
             h = hashlib.sha256(("::".join(files)).encode("utf-8")).hexdigest()[:8]
-            return f"dir_{clean[:18]}_{h}"
+            return f"dir_{INDEX_VERSION}_{clean[:15]}_{h}"
         digest = hashlib.sha256(file_path.read_bytes()).hexdigest()[:8]
     except Exception:
         digest = "default"
-    return f"doc_v4_{clean[:17]}_{digest}"
+    return f"doc_{INDEX_VERSION}_{clean[:17]}_{digest}"
 
 
 def build_pipeline(
@@ -207,7 +240,9 @@ def build_pipeline(
     if not already_indexed:
         print(f"[*] Building vector index ({len(chunks)} chunks with INT8 Scalar Quantization)...")
         dense.recreate()
-        dense.index(chunks, batch_size=32, show_progress=False)
+        # DenseIndex's default batch (256): every flush is a blocking
+        # upsert(wait=True), so 32-chunk batches paid that round trip 8x as often.
+        dense.index(chunks, show_progress=False)
         print(f"[+] Indexed {len(chunks)} chunks in Qdrant.")
 
     is_urdu = any("urdu" in (d.source or "").lower() or "bang-i-dara" in (d.source or "").lower() or "iqbal" in (d.source or "").lower() for d in docs)

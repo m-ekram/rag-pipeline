@@ -172,3 +172,71 @@ def test_domain_content_words_are_not_stopped():
 
 def test_english_stopwords_still_apply():
     assert tokenize("the roll of the state") == ["roll", "state"]
+
+
+# --- OCR failure handling -----------------------------------------------
+
+
+class _BrokenOCR:
+    lang = "en"
+
+    def extract_page(self, image_path, page):
+        raise RuntimeError("engine crashed")
+
+
+def _digits_only_pdf(path):
+    """A page whose native text is too weak to trust, so OCR is attempted."""
+    pymupdf = pytest.importorskip("pymupdf")
+    doc = pymupdf.open()
+    doc.new_page().insert_text((72, 72), "12 34 56")
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def test_ocr_failure_falls_back_to_native_text_without_caching_it(tmp_path):
+    """Cached under the page key, the fallback stopped every later run from
+    retrying OCR — one transient engine crash became permanent."""
+    from ingestion.pdf_extractor import PDFExtractor
+
+    pdf_path = _digits_only_pdf(tmp_path / "scan.pdf")
+    cache = ExtractionCache(root=str(tmp_path / "c"))
+    docs = list(PDFExtractor(ocr_provider=_BrokenOCR(), cache=cache).extract(pdf_path))
+
+    assert [d.metadata["extraction_method"] for d in docs] == ["native_fallback"]
+    assert cache.stats.writes == 0
+
+
+def test_cache_key_does_not_change_once_the_ocr_engine_is_built(tmp_path):
+    """PaddleOCRProvider is an alias, so the class name flipped to
+    RobustPaddleOCREngine after the lazy engine was constructed, and a reused
+    extractor missed the cache for every file after the first."""
+    from ingestion.pdf_extractor import PDFExtractor
+
+    extractor = PDFExtractor(ocr_lang="hi", cache=ExtractionCache(root=str(tmp_path / "c")))
+    before = extractor._cache_params()
+    extractor._get_ocr_provider()  # lazy engine construction; Paddle itself loads on first page
+    assert extractor._cache_params() == before
+    assert before["provider"] == "PaddleOCRProvider"
+
+
+def test_tesseract_page_does_not_report_the_previous_pages_confidence(tmp_path, monkeypatch):
+    """Recognition scores from an earlier Paddle page leaked into a later
+    Tesseract page and were reported as its confidence."""
+    import sys
+    import types
+
+    from PIL import Image
+
+    from ingestion.ocr import TesseractOCRProvider
+
+    fake = types.SimpleNamespace(image_to_string=lambda image, lang, config: "Serial 12")
+    monkeypatch.setitem(sys.modules, "pytesseract", fake)
+    image = tmp_path / "page.png"
+    Image.new("RGB", (40, 20), "white").save(image)
+
+    engine = TesseractOCRProvider(lang="eng")
+    engine._last_scores = [0.99]  # left over from a previous Paddle page
+    result = engine.extract_page(str(image), page=2)
+    assert result.text == "Serial 12"
+    assert result.confidence is None

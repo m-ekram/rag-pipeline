@@ -36,8 +36,10 @@ _SERIAL_PATTERN = re.compile(
 )
 
 # Regex for detecting house number queries: "Who lives in house S/0?", "house number 4", "house no: S/0", "मकान संख्या 4", "مکان نمبر 4"
+# `(?![a-z])` after each keyword stops "household" / "flatten" from reading as
+# a house query whose "number" is the rest of the word.
 _HOUSE_PATTERN = re.compile(
-    r"(?:(?:who\s+lives\s+in|voters?\s+in|residents?\s+of)\s+house\s*(?:no\.?|number)?|(?:house|h\.?\s*no\.?|quarter|flat)\s*(?:no\.?|number)?|मकान\s*(?:संख्या|नं|नम्बर|सं\.)?|مکان\s*(?:نمبر)?)\s*[:#-]?\s*([०-९0-9A-Za-z\u0900-\u097F\/\-]+)",
+    r"(?:(?:who\s+lives\s+in|voters?\s+in|residents?\s+of)\s+house(?![a-z])\s*(?:no\.?|number)?|\b(?:house|h\.?\s*no\.?|quarter|flat)(?![a-z])\s*(?:no\.?|number)?|मकान\s*(?:संख्या|नं|नम्बर|सं\.)?|مکان\s*(?:نمبر)?)\s*[:#-]?\s*([०-९0-9A-Za-z\u0900-\u097F\/\-]+)",
     re.IGNORECASE,
 )
 
@@ -176,6 +178,22 @@ class QueryIntent(enum.Enum):
     HYBRID_SEMANTIC = "hybrid_semantic"
 
 
+# A relation name ends where the next clause begins. The capture class admits
+# spaces, so "father name Md Zahid Khan and live in house 4" captured "... and
+# live in house", and every trailing word became a required search term.
+_RELATION_TAIL = re.compile(
+    r"\s+(?:and|or|who|which|whose|with|in|at|from|lives?|living|और|तथा|जो|में)(?=\s|$)[\s\S]*$",
+    re.IGNORECASE,
+)
+
+# Intents that list every matching record rather than the single best one;
+# their results must not be cut down to the caller's usual `limit`.
+_ROSTER_INTENTS = frozenset({
+    QueryIntent.EXHAUSTIVE_LIST, QueryIntent.RELATION_LOOKUP, QueryIntent.HOUSE_LOOKUP,
+})
+_ROSTER_LIMIT = 30
+
+
 class IntentRouter:
     """Unified Query Intent Router and Hybrid Retriever."""
 
@@ -191,6 +209,9 @@ class IntentRouter:
         self.dense = dense
         self.reranker = reranker
         self.candidate_limit = candidate_limit
+        # Intent that served the most recent `retrieve` call (after any
+        # fallback), so the pipeline can size evidence for list-style answers.
+        self.last_intent: Optional[QueryIntent] = None
 
     def classify(self, query: str) -> tuple[QueryIntent, dict]:
         """Classify user intent and extract query parameters."""
@@ -209,7 +230,7 @@ class IntentRouter:
 
         rel_match = _RELATION_PATTERN.search(query)
         if rel_match:
-            rel_name = rel_match.group(1).strip(" ?.,|:;\n")
+            rel_name = _RELATION_TAIL.sub("", rel_match.group(1)).strip(" ?.,|:;\n")
             if len(rel_name) >= 2:
                 return QueryIntent.RELATION_LOOKUP, {"relation_name": rel_name}
 
@@ -348,7 +369,9 @@ class IntentRouter:
             else:
                 intent = QueryIntent.HYBRID_SEMANTIC
 
-        effective_limit = max(limit, 30) if intent == QueryIntent.EXHAUSTIVE_LIST else limit
+        # List-style intents keep every match they found (up to the roster cap);
+        # slicing a relation or house lookup to `limit` silently dropped voters.
+        effective_limit = max(limit, _ROSTER_LIMIT) if intent in _ROSTER_INTENTS else limit
 
         if intent in (QueryIntent.HYBRID_SEMANTIC, QueryIntent.EXHAUSTIVE_LIST) or not candidates:
             logger.info("Routing query to HYBRID_SEMANTIC / EXHAUSTIVE_LIST (RRF k=60, limit=%d)", effective_limit)
@@ -358,6 +381,8 @@ class IntentRouter:
             candidates = reciprocal_rank_fusion(
                 dense_hits, lexical_hits, k=60, limit=effective_limit
             )
+
+        self.last_intent = intent
 
         # Cross-encoder neural reranking:
         # Crucial architectural guard: ONLY rerank fuzzy semantic queries (HYBRID_SEMANTIC).

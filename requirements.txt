@@ -16,3 +16,6 @@ beautifulsoup4==4.15.0
 pymupdf==1.25.3
 paddleocr>=2.9.0
 paddlepaddle>=2.6.0
+# Tesseract fallback, and the default engine on Linux ARM64 where paddlepaddle
+# segfaults. Also needs the tesseract binary with the hin/urd language packs.
+pytesseract>=0.3.10

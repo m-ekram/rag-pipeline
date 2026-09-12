@@ -19,6 +19,7 @@ must not be exposed to a network.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import queue
@@ -365,6 +366,18 @@ def _session_key(request: IndexRequest) -> str:
     return f"{request.folder}|{request.backend}|{request.model or 'default'}"
 
 
+def _collection_name(folder: Path) -> str:
+    """Stable vector-collection name for a folder.
+
+    Derived with sha256 rather than `hash()`: string hashing is salted per
+    process, so the old name changed on every server restart — each restart
+    re-embedded the whole folder and orphaned the previous collection.
+    """
+    slug = "".join(ch if ch.isalnum() else "_" for ch in folder.name)[:24]
+    digest = hashlib.sha256(str(folder).encode("utf-8")).hexdigest()[:8]
+    return f"folder_{slug}_{digest}"
+
+
 def _build(request: IndexRequest, emit) -> None:
     # Imported lazily: these pull in torch and sentence-transformers, and the
     # server should start instantly even when no model is installed.
@@ -389,6 +402,10 @@ def _build(request: IndexRequest, emit) -> None:
           "message": f"Found {len(candidates)} file(s) in {folder.name}",
           "current": 0, "total": len(candidates)})
 
+    # One extractor for the whole folder: it owns the OCR engine, and building
+    # one per file reloaded the model for every PDF.
+    extractor = ask.make_extractor(ocr_lang=request.ocr_lang)
+
     documents = []
     for position, path in enumerate(candidates, 1):
         emit({"type": "progress", "stage": "extract",
@@ -398,7 +415,7 @@ def _build(request: IndexRequest, emit) -> None:
         try:
             documents.extend(
                 ask.load_file(path, ocr_lang=request.ocr_lang,
-                              max_pages=request.max_pages)
+                              max_pages=request.max_pages, extractor=extractor)
             )
         except Exception as exc:
             # One unreadable file must not abandon an expensive multi-file run.
@@ -418,9 +435,7 @@ def _build(request: IndexRequest, emit) -> None:
           "message": f"Chunking and indexing {len(documents)} units",
           "current": len(candidates), "total": len(candidates)})
 
-    collection = "folder_" + "".join(
-        ch if ch.isalnum() else "_" for ch in folder.name
-    )[:24] + f"_{abs(hash(str(folder))) % 10**8}"
+    collection = _collection_name(folder)
 
     client, where = _qdrant_client()
     emit({"type": "progress", "stage": "index", "message": f"Vector store: {where}",

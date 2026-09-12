@@ -22,7 +22,34 @@ from .types import ScoredChunk
 logger = logging.getLogger(__name__)
 
 # Token pattern: matches letters, digits, and characters like / - _ . *
-_TOKEN_PATTERN = re.compile(r"[\w\u0300-\u1B00/_\-.*]+", re.UNICODE)
+_TOKEN_PATTERN = re.compile(r"[\ẁ-ᬀ/_\-.*]+", re.UNICODE)
+
+_CHUNK_FIELDS = frozenset(Chunk.__dataclass_fields__)
+
+
+def _quote(term: str) -> str:
+    """Render one term as an FTS5 string literal.
+
+    Quoted, a term can never be read as query syntax. Bare AND / OR / NOT /
+    NEAR are operators and a bare slash is a syntax error; either raised an
+    OperationalError that surfaced as zero results.
+    """
+    return '"' + term.replace('"', '""') + '"'
+
+
+def _row_to_chunk(cid: str, text: str, meta_json: Optional[str]) -> Chunk:
+    """Rebuild a Chunk from a stored row.
+
+    The payload JSON holds every field except the text, which lives only in the
+    indexed `text` column.
+    """
+    payload = json.loads(meta_json) if meta_json else {}
+    kwargs = {k: v for k, v in payload.items() if k in _CHUNK_FIELDS}
+    kwargs.setdefault("chunk_id", cid)
+    kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
+    kwargs["text"] = text
+    kwargs.setdefault("ordinal", 0)
+    return Chunk(**kwargs)
 
 
 class FTS5Index:
@@ -67,13 +94,18 @@ class FTS5Index:
                 page_num = int(page_val) if page_val is not None else 0
             except (ValueError, TypeError):
                 page_num = 0
+            payload = c.to_payload()
+            # The text is stored once, in the indexed column; a second copy in
+            # the payload doubled every row. Unescaped UTF-8 keeps Devanagari at
+            # 3 bytes a character instead of 6.
+            payload.pop("text", None)
             rows.append(
                 (
                     c.chunk_id,
                     c.doc_id,
                     page_num,
                     c.text,
-                    json.dumps(c.to_payload()),
+                    json.dumps(payload, ensure_ascii=False),
                 )
             )
 
@@ -95,16 +127,17 @@ class FTS5Index:
         if not tokens:
             return ""
 
-        # Quote tokens containing slashes, dashes, or special chars
         formatted = []
         for t in tokens:
             cleaned = t.strip("./-_*")
             if not cleaned:
                 continue
-            if any(ch in t for ch in "/-_.") and not t.endswith("*"):
-                formatted.append(f'"{t}"')
+            # A '*' after a quoted string is FTS5's prefix query, so both
+            # "SHS512439"* and "BR/35/207/29105"* work as prefixes.
+            if t.endswith("*"):
+                formatted.append(_quote(t.rstrip("*")) + "*")
             else:
-                formatted.append(t)
+                formatted.append(_quote(t))
 
         if not formatted:
             return ""
@@ -149,22 +182,13 @@ class FTS5Index:
             logger.warning("FTS5 query '%s' failed: %s", fts_query, e)
             return []
 
-        scored: list[ScoredChunk] = []
-        for rank, (cid, text, meta_json, raw_score) in enumerate(rows, 1):
-            # SQLite FTS5 bm25() returns negative values where lower is better (e.g. -15.2 is better than -3.1).
-            # Convert to positive score: -raw_score so higher is better.
-            score = -float(raw_score)
-            payload = json.loads(meta_json) if meta_json else {}
-            chunk_fields = {f for f in Chunk.__dataclass_fields__}
-            chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
-            chunk_kwargs.setdefault("chunk_id", cid)
-            chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
-            chunk_kwargs.setdefault("text", text)
-            chunk_kwargs.setdefault("ordinal", 0)
-            chunk = Chunk(**chunk_kwargs)
-            scored.append(ScoredChunk(chunk_id=cid, score=score, rank=rank, chunk=chunk))
-
-        return scored
+        # SQLite FTS5 bm25() is negative with lower = better (e.g. -15.2 beats
+        # -3.1); negate it so a higher score is better.
+        return [
+            ScoredChunk(chunk_id=cid, score=-float(raw_score), rank=rank,
+                        chunk=_row_to_chunk(cid, text, meta_json))
+            for rank, (cid, text, meta_json, raw_score) in enumerate(rows, 1)
+        ]
 
     def search_field(
         self,
@@ -193,37 +217,36 @@ class FTS5Index:
         else:
             field_markers = [field_name]
 
-        def quote_term(t: str) -> str:
-            t = t.strip()
-            if not t:
-                return ""
-            if any(ch in t for ch in "/-_.") or " " in t:
-                return f'"{t}"'
-            return t
+        # Terms are either flat alternatives, or groups of dual-script variants
+        # (e.g. [["Zahid", "जाहिद"], ["Khan", "खान"]]) of which every group is
+        # required.
+        grouped = isinstance(terms[0], (list, tuple, set))
+        raw_groups = terms if grouped else [terms]
+        groups = [[str(t).strip() for t in grp if str(t).strip()] for grp in raw_groups]
+        groups = [grp for grp in groups if grp]
+        if not groups:
+            return []
 
-        fm_clause = " OR ".join(f'"{m}"' if " " in m else m for m in field_markers)
+        fm_clause = " OR ".join(_quote(m) for m in field_markers)
+        terms_expr = " AND ".join(
+            "(" + " OR ".join(_quote(t) for t in grp) + ")" for grp in groups
+        )
+        queries_to_try = [f"({fm_clause}) AND {terms_expr}", terms_expr]
 
-        # Check if terms is a list of groups (e.g. [["Zahid", "जाहिद"], ["Khan", "खान"]])
-        queries_to_try = []
-        if terms and isinstance(terms[0], (list, tuple, set)):
-            group_clauses = []
-            for grp in terms:
-                clauses = [quote_term(str(t)) for t in grp if quote_term(str(t))]
-                if clauses:
-                    group_clauses.append("(" + " OR ".join(clauses) + ")")
-            if group_clauses:
-                queries_to_try.append(f"({fm_clause}) AND " + " AND ".join(group_clauses))
-                queries_to_try.append(" AND ".join(group_clauses))
-        else:
-            term_clauses = [quote_term(str(t)) for t in terms if quote_term(str(t))]
-            if not term_clauses:
-                return []
-            terms_or = " OR ".join(term_clauses)
-            queries_to_try.append(f"({fm_clause}) AND ({terms_or})")
-            queries_to_try.append(f"({terms_or})")
-
-        seen_ids = set()
+        seen_ids: set[str] = set()
         results: list[ScoredChunk] = []
+
+        def add(cid: str, text: str, meta_json: Optional[str]) -> bool:
+            """Record a hit once; True when the limit is reached."""
+            if cid not in seen_ids:
+                seen_ids.add(cid)
+                results.append(ScoredChunk(
+                    chunk_id=cid,
+                    score=1.0 - (len(results) * 0.005),
+                    rank=len(results) + 1,
+                    chunk=_row_to_chunk(cid, text, meta_json),
+                ))
+            return len(results) >= limit
 
         for fts_q in queries_to_try:
             sql = """
@@ -239,52 +262,36 @@ class FTS5Index:
             params.append(limit)
 
             try:
-                cursor = self.con.execute(sql, params)
-                rows = cursor.fetchall()
-                for cid, text, meta_json, raw_score in rows:
-                    if cid in seen_ids:
-                        continue
-                    seen_ids.add(cid)
-                    payload = json.loads(meta_json) if meta_json else {}
-                    chunk_fields = {f for f in Chunk.__dataclass_fields__}
-                    chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
-                    chunk_kwargs.setdefault("chunk_id", cid)
-                    chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
-                    chunk_kwargs.setdefault("text", text)
-                    chunk_kwargs.setdefault("ordinal", 0)
-                    chunk = Chunk(**chunk_kwargs)
-                    score = 1.0 - (len(results) * 0.005)
-                    results.append(ScoredChunk(chunk_id=cid, score=score, rank=len(results) + 1, chunk=chunk))
-                    if len(results) >= limit:
-                        return results
+                rows = self.con.execute(sql, params).fetchall()
             except sqlite3.OperationalError as e:
                 logger.debug("FTS5 search_field query '%s' error: %s", fts_q, e)
                 continue
+            for cid, text, meta_json, _raw_score in rows:
+                if add(cid, text, meta_json):
+                    return results
 
-        # Fallback to SQL LIKE matching for exact substring safety
+        # Substring fallback for words FTS cannot see as tokens: OCR often glues
+        # a name to its neighbours. Every group is still required, so "Khan"
+        # alone does not match a search for "Zahid Khan".
         if not results:
-            for term in terms:
-                clean_term = term.strip('"\'')
-                if len(clean_term) < 2:
-                    continue
-                sql = "SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE text LIKE ? LIMIT ?"
-                cursor = self.con.execute(sql, (f"%{clean_term}%", limit))
-                for cid, text, meta_json in cursor.fetchall():
-                    if cid in seen_ids:
-                        continue
-                    seen_ids.add(cid)
-                    payload = json.loads(meta_json) if meta_json else {}
-                    chunk_fields = {f for f in Chunk.__dataclass_fields__}
-                    chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
-                    chunk_kwargs.setdefault("chunk_id", cid)
-                    chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
-                    chunk_kwargs.setdefault("text", text)
-                    chunk_kwargs.setdefault("ordinal", 0)
-                    chunk = Chunk(**chunk_kwargs)
-                    score = 1.0 - (len(results) * 0.005)
-                    results.append(ScoredChunk(chunk_id=cid, score=score, rank=len(results) + 1, chunk=chunk))
-                    if len(results) >= limit:
-                        return results
+            clauses: list[str] = []
+            like_params: list[object] = []
+            for grp in groups:
+                variants = [v for v in (t.strip("\"'") for t in grp) if len(v) >= 2]
+                if variants:
+                    clauses.append("(" + " OR ".join("text LIKE ?" for _ in variants) + ")")
+                    like_params.extend(f"%{v}%" for v in variants)
+            if clauses:
+                sql = ("SELECT chunk_id, text, metadata_json FROM chunks_fts WHERE "
+                       + " AND ".join(clauses))
+                if doc_id is not None:
+                    sql += " AND doc_id = ?"
+                    like_params.append(doc_id)
+                sql += " LIMIT ?"
+                like_params.append(limit)
+                for cid, text, meta_json in self.con.execute(sql, like_params).fetchall():
+                    if add(cid, text, meta_json):
+                        break
 
         return results
 
@@ -298,17 +305,7 @@ class FTS5Index:
         sql += " ORDER BY rowid ASC"
 
         cursor = self.con.execute(sql, params)
-        chunks = []
-        chunk_fields = {f for f in Chunk.__dataclass_fields__}
-        for cid, text, meta_json in cursor.fetchall():
-            payload = json.loads(meta_json) if meta_json else {}
-            chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
-            chunk_kwargs.setdefault("chunk_id", cid)
-            chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
-            chunk_kwargs.setdefault("text", text)
-            chunk_kwargs.setdefault("ordinal", 0)
-            chunks.append(Chunk(**chunk_kwargs))
-        return chunks
+        return [_row_to_chunk(cid, text, meta_json) for cid, text, meta_json in cursor.fetchall()]
 
     def fuzzy_search_epic(
         self, target_epic: str, max_distance: int = 2, limit: int = 5
@@ -357,14 +354,7 @@ class FTS5Index:
                         best_dist = dist
 
             if matched_digit or best_dist <= max_distance:
-                payload = json.loads(meta_json) if meta_json else {}
-                chunk_fields = {f for f in Chunk.__dataclass_fields__}
-                chunk_kwargs = {k: v for k, v in payload.items() if k in chunk_fields}
-                chunk_kwargs.setdefault("chunk_id", cid)
-                chunk_kwargs.setdefault("doc_id", cid.split("::")[0] if "::" in cid else cid)
-                chunk_kwargs.setdefault("text", text)
-                chunk_kwargs.setdefault("ordinal", 0)
-                chunk = Chunk(**chunk_kwargs)
+                chunk = _row_to_chunk(cid, text, meta_json)
                 score = 1.0 if matched_digit else 1.0 - (best_dist * 0.05)
                 matches.append((best_dist, ScoredChunk(chunk_id=cid, score=score, rank=1, chunk=chunk)))
 

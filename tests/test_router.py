@@ -246,3 +246,43 @@ def test_router_house_dual_script_retrieval(tmp_path):
     assert any("1087" in t for t in serials)
     assert any("1088" in t for t in serials)
 
+
+def test_relation_name_stops_at_the_next_clause():
+    router = IntentRouter(lexical=None, dense=None)
+    intent, params = router.classify(
+        "Which voters have father name Md Zahid Khan and live in house 4?"
+    )
+    assert intent == QueryIntent.RELATION_LOOKUP
+    assert params["relation_name"] == "Md Zahid Khan"
+
+
+def test_household_is_not_a_house_number_query():
+    router = IntentRouter(lexical=None, dense=None)
+    intent, _ = router.classify("How many members are in the household of Zahid?")
+    assert intent != QueryIntent.HOUSE_LOOKUP
+
+
+def test_relation_lookup_without_an_fts_match_falls_back_instead_of_crashing(tmp_path):
+    """OCR glued the name into one token, so FTS finds nothing and the
+    substring fallback runs — it used to raise AttributeError on term groups."""
+    fts = FTS5Index(db_path=tmp_path / "rel.db")
+    fts.build([Chunk(chunk_id="c1", doc_id="d1", ordinal=0,
+                     text="- [Serial: 5 | Voter: Ali | Relation: Father: MdZahidKhan]")])
+
+    router = IntentRouter(lexical=fts, dense=None)
+    results = router.retrieve("Which voters have father name Zahid Khan?")
+    assert [r.chunk_id for r in results] == ["c1"]
+    assert router.last_intent == QueryIntent.RELATION_LOOKUP
+
+
+def test_relation_lookup_returns_more_than_the_default_limit(tmp_path):
+    """A relation lookup lists every match; slicing to `limit` dropped voters."""
+    fts = FTS5Index(db_path=tmp_path / "many.db")
+    fts.build([
+        Chunk(chunk_id=f"c{i}", doc_id="d1", ordinal=i,
+              text=f"- [Serial: {i} | Voter: V{i} | Relation: पिता: जाहिद खान (Zahid Khan)]")
+        for i in range(25)
+    ])
+    router = IntentRouter(lexical=fts, dense=None)
+    assert len(router.retrieve("Which voters have father name Zahid Khan?", limit=10)) == 25
+
