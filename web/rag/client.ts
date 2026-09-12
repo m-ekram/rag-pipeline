@@ -1,4 +1,4 @@
-import type { Backend, BrowseResult, StreamEvent } from "./types";
+import type { Backend, BrowseResult, Health, StreamEvent } from "./types";
 
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -11,6 +11,10 @@ async function getJSON<T>(url: string): Promise<T> {
 
 export function fetchBackends(): Promise<{ backends: Backend[] }> {
   return getJSON("/api/backends");
+}
+
+export function fetchHealth(): Promise<Health> {
+  return getJSON("/api/health");
 }
 
 export function browse(path?: string): Promise<BrowseResult> {

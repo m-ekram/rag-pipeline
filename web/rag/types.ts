@@ -6,6 +6,10 @@ export interface Backend {
   available: boolean;
   models: string[];
   hint: string;
+  /** Model size in bytes, when the backend reports it (Ollama). */
+  sizes?: Record<string, number>;
+  /** The fastest backend that can answer on this machine. */
+  recommended?: boolean;
 }
 
 export interface DirEntry {
@@ -52,10 +56,24 @@ export interface AnswerMetrics {
   latency_generation_ms?: number;
 }
 
+export interface Health {
+  ok: boolean;
+  sessions: number;
+  warm: { state: "cold" | "warming" | "ready" | "error"; seconds: number | null; detail: string };
+}
+
 /** Events the NDJSON endpoints emit. */
 export type StreamEvent =
-  | { type: "progress"; stage: string; message: string; current: number; total: number }
-  | { type: "status"; message: string }
+  | {
+      type: "progress";
+      stage: string;
+      message: string;
+      current?: number | null;
+      total?: number | null;
+    }
+  | { type: "status"; stage?: string; message: string }
+  /** Sent every few seconds while the backend is busy but has nothing new to say. */
+  | { type: "heartbeat"; stage: string; elapsed: number }
   | { type: "token"; text: string }
   | {
       type: "done";
@@ -80,6 +98,10 @@ export interface ChatTurn {
   question: string;
   answer: string;
   streaming: boolean;
+  /** What the backend is doing right now, e.g. "Generating with groq · llama-3.1-8b-instant". */
+  activity?: string;
+  /** Seconds since the question was sent, while waiting. */
+  elapsed?: number;
   abstained?: boolean;
   reason?: string;
   citations?: Citation[];

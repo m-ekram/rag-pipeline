@@ -1,12 +1,15 @@
 "use client";
 
-import type { Backend } from "@/rag/types";
+import { formatBytes } from "@/rag/client";
+import type { Backend, Health } from "@/rag/types";
 
 export interface IndexState {
   running: boolean;
   log: { text: string; error?: boolean }[];
   percent: number;
   ready: { documents: number; files: number; backend: string; model: string } | null;
+  /** Live "what is happening now" line, fed by heartbeats. */
+  activity: string | null;
 }
 
 export function Sidebar({
@@ -17,6 +20,7 @@ export function Sidebar({
   model,
   ocrLang,
   index,
+  warm,
   theme,
   onOpenPicker,
   onBackend,
@@ -32,6 +36,7 @@ export function Sidebar({
   model: string;
   ocrLang: string;
   index: IndexState;
+  warm: Health["warm"] | null;
   theme: "light" | "dark" | null;
   onOpenPicker: () => void;
   onBackend: (id: string) => void;
@@ -60,6 +65,17 @@ export function Sidebar({
           {theme === "dark" ? <SunIcon /> : <MoonIcon />}
         </button>
       </header>
+
+      {warm && warm.state !== "ready" && (
+        <Status
+          tone={warm.state === "error" ? "bad" : "idle"}
+          text={
+            warm.state === "error"
+              ? `Model warm-up failed: ${warm.detail}`
+              : "Backend is loading its models (first start only)…"
+          }
+        />
+      )}
 
       <Field label="Data folder">
         <button
@@ -99,6 +115,7 @@ export function Sidebar({
           {backends.map((b) => (
             <option key={b.id} value={b.id} disabled={!b.available}>
               {b.available ? b.label : `${b.label} — unavailable`}
+              {b.recommended ? " · recommended" : ""}
             </option>
           ))}
         </select>
@@ -113,6 +130,7 @@ export function Sidebar({
             backend.models.map((m) => (
               <option key={m} value={m}>
                 {m}
+                {backend.sizes?.[m] ? ` · ${formatBytes(backend.sizes[m])}` : ""}
               </option>
             ))
           ) : (
@@ -140,6 +158,7 @@ export function Sidebar({
           onChange={(e) => onOcrLang(e.target.value)}
           className="w-full rounded-xl border border-rule bg-sunk px-3 py-2.5 text-[13.5px] outline-none transition focus:border-accent"
         >
+          <option value="auto">Auto-detect</option>
           <option value="en">English</option>
           <option value="hi">Hindi · देवनागरी</option>
           <option value="urd">Urdu · اردو</option>
@@ -163,6 +182,9 @@ export function Sidebar({
               style={{ width: `${index.percent}%` }}
             />
           </div>
+          {index.activity && (
+            <p className="font-mono text-[11px] text-muted">{index.activity}</p>
+          )}
           <div className="flex max-h-40 flex-col gap-1 overflow-y-auto rounded-lg bg-sunk px-3 py-2.5 font-mono text-[10.5px] leading-relaxed">
             {index.log.map((line, i) => (
               <p

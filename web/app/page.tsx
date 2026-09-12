@@ -4,16 +4,29 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Conversation } from "@/components/Conversation";
 import { FolderPicker } from "@/components/FolderPicker";
 import { Sidebar, type IndexState } from "@/components/Sidebar";
-import { fetchBackends, streamNDJSON } from "@/rag/client";
-import type { Backend, ChatTurn } from "@/rag/types";
+import { fetchBackends, fetchHealth, streamNDJSON } from "@/rag/client";
+import type { Backend, ChatTurn, Health } from "@/rag/types";
 
-const EMPTY_INDEX: IndexState = { running: false, log: [], percent: 0, ready: null };
+const EMPTY_INDEX: IndexState = { running: false, log: [], percent: 0, ready: null, activity: null };
+
+const STAGE_LABELS: Record<string, string> = {
+  queued: "Waiting for an earlier request",
+  warming: "Loading models",
+  starting: "Starting",
+  scan: "Scanning folder",
+  extract: "Extracting text",
+  index: "Indexing",
+  retrieval: "Searching",
+  rerank: "Ranking evidence",
+  generation: "Generating",
+};
 
 export default function Page() {
   const [backends, setBackends] = useState<Backend[]>([]);
   const [backendId, setBackendId] = useState("stub");
   const [model, setModel] = useState("");
-  const [ocrLang, setOcrLang] = useState("en");
+  const [ocrLang, setOcrLang] = useState("auto");
+  const [warm, setWarm] = useState<Health["warm"] | null>(null);
 
   const [folder, setFolder] = useState<string | null>(null);
   const [indexable, setIndexable] = useState(0);
@@ -42,9 +55,11 @@ export default function Page() {
       try {
         const { backends } = await fetchBackends();
         setBackends(backends);
-        // Prefer a real engine; the stub exists to test retrieval, so it must
-        // never be selected by default and pass fake answers off as real.
+        // Prefer the engine the server recommends: the fastest that can answer
+        // on this machine. The stub exists to test retrieval, so it must never
+        // be selected by default and pass fake answers off as real.
         const first =
+          backends.find((b) => b.recommended) ??
           backends.find((b) => b.available && b.id !== "stub") ??
           backends.find((b) => b.available);
         if (first) {
@@ -55,6 +70,30 @@ export default function Page() {
         /* the sidebar shows every backend as unreachable */
       }
     })();
+  }, []);
+
+  // The backend loads its models in the background at startup. Showing that
+  // state is what stops the first click from looking like a hang.
+  useEffect(() => {
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let polls = 0;
+    const poll = async () => {
+      try {
+        const health = await fetchHealth();
+        if (stopped) return;
+        setWarm(health.warm);
+        if (health.warm.state === "ready" || health.warm.state === "error") return;
+      } catch {
+        /* backend not up yet */
+      }
+      if (!stopped && ++polls < 200) timer = setTimeout(poll, 3000);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+    };
   }, []);
 
   const toggleTheme = () => {
@@ -90,13 +129,26 @@ export default function Page() {
           log(ev.message);
           setIndex((s) => ({
             ...s,
-            percent: ev.total ? Math.round((100 * ev.current) / ev.total) : s.percent,
+            activity: null,
+            // Held below 100 until "done": the index stage can still take a while.
+            percent:
+              ev.total && ev.current != null
+                ? Math.min(95, Math.round((100 * ev.current) / ev.total))
+                : s.percent,
+          }));
+        } else if (ev.type === "status") {
+          log(ev.message);
+        } else if (ev.type === "heartbeat") {
+          setIndex((s) => ({
+            ...s,
+            activity: `${STAGE_LABELS[ev.stage] ?? ev.stage} · ${Math.round(ev.elapsed)}s`,
           }));
         } else if (ev.type === "done") {
           setSessionId(ev.session_id ?? null);
           setIndex((s) => ({
             ...s,
             percent: 100,
+            activity: null,
             ready: {
               documents: ev.documents ?? 0,
               files: ev.files ?? 0,
@@ -112,7 +164,7 @@ export default function Page() {
     } catch (err) {
       log(err instanceof Error ? err.message : String(err), true);
     } finally {
-      setIndex((s) => ({ ...s, running: false }));
+      setIndex((s) => ({ ...s, running: false, activity: null }));
     }
   }, [folder, backendId, model, ocrLang]);
 
@@ -144,6 +196,10 @@ export default function Page() {
             setTurns((t) =>
               t.map((x) => (x.id === id ? { ...x, answer: x.answer + ev.text } : x)),
             );
+          } else if (ev.type === "status") {
+            patch({ activity: ev.message });
+          } else if (ev.type === "heartbeat") {
+            patch({ elapsed: ev.elapsed });
           } else if (ev.type === "done") {
             patch({
               // The streamed text carries raw [1] markers; the final answer has
@@ -175,6 +231,8 @@ export default function Page() {
     [asking, sessionId],
   );
 
+  // Aborting on unmount closes the stream, which the backend treats as a
+  // cancellation and stops generating.
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const canChat = Boolean(sessionId) && !asking;
@@ -190,6 +248,7 @@ export default function Page() {
           model={model}
           ocrLang={ocrLang}
           index={index}
+          warm={warm}
           theme={theme}
           onOpenPicker={() => setPickerOpen(true)}
           onBackend={selectBackend}

@@ -1,17 +1,21 @@
 """FastAPI backend for the RAG chat interface.
 
-Serves a single-page chat UI and exposes the pipeline over HTTP:
+Serves the chat UI and exposes the pipeline over HTTP:
 
-    GET  /                     the chat interface
+    GET  /                     the chat interface (the exported Next.js app
+                               when web/out exists, else the legacy page)
     GET  /api/backends         which LLM backends are reachable, and their models
     GET  /api/browse           directory listing, for the folder picker
+    GET  /api/health           liveness, plus model warm-up state
     POST /api/index            index a folder      (streams NDJSON progress)
     POST /api/chat             ask a question      (streams NDJSON tokens)
 
 Both long operations stream NDJSON over a POST body rather than using
 EventSource, which is GET-only. Indexing a scanned folder can take minutes of
 OCR and generation on a local model can take minutes more, so neither can be a
-plain request/response without the client appearing to hang.
+plain request/response without the client appearing to hang. While the
+pipeline is silent the stream carries a heartbeat every few seconds, and a
+client that disconnects cancels its request.
 
 Binds to 127.0.0.1 by default: `/api/browse` walks the local filesystem, so this
 must not be exposed to a network.
@@ -19,42 +23,66 @@ must not be exposed to a network.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import logging
 import os
 import queue
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 import traceback
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any, AsyncIterator, Optional
 
-from fastapi import FastAPI, HTTPException
+ROOT = Path(__file__).resolve().parent.parent
+
+# API keys (GROQ_API_KEY, ANTHROPIC_API_KEY) live in the project's .env. The
+# eval scripts loaded it but the server never did, so hosted engines showed as
+# unavailable in the UI however they were configured.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(ROOT / ".env")
+except ImportError:  # pragma: no cover - python-dotenv is in requirements
+    pass
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from console import use_utf8_console
-from generation.llm import BACKENDS, OllamaBackend, available_backends
-
-try:
-    from ingestion.ocr import NoOCREngineAvailable as NoOCREngineAvailableType
-except Exception:  # pragma: no cover - older ocr module
-    NoOCREngineAvailableType = None
+from generation.llm import BACKENDS, OllamaBackend, available_backends, preferred_ollama_order
 
 use_utf8_console()
+logger = logging.getLogger("rag.api")
 
 STATIC_DIR = Path(__file__).parent / "static"
+# `pnpm build` in web/ exports the Next.js UI here.
+WEB_OUT = ROOT / "web" / "out"
 SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md", ".csv", ".json", ".log"}
+
+# Seconds between heartbeat events while the pipeline has nothing to say.
+HEARTBEAT_SECONDS = 2.0
+# OCR worker processes while indexing: all cores but one, as the CLI uses.
+OCR_WORKERS = max(1, (os.cpu_count() or 2) - 1)
+# Indexed folders kept in memory; each holds its lexical index and vectors.
+MAX_SESSIONS = 3
 
 # Directories that are never a user's data folder. Without this the picker
 # offers __pycache__, venv and node_modules alongside real folders, and walking
-# into venv/ lists thousands of package files as "indexable".
+# into venv/ lists thousands of package files as "indexable". The cache folders
+# hold per-page OCR results as .json, which would otherwise be indexed as
+# documents.
 SKIP_DIRS = {
     "__pycache__", "venv", ".venv", "env", ".env", "node_modules", "site-packages",
     "dist", "build", ".git", ".cache", ".pytest_cache", ".mypy_cache", ".idea",
     ".vscode", "egg-info", ".ipynb_checkpoints", "indexes", ".ruff_cache",
+    "cache", "ocr_cache",
 }
 
 # Project scaffolding that happens to carry a supported extension. These are
@@ -122,49 +150,95 @@ def _count_data_files(folder: Path, *, max_depth: int = 2, cap: int = 200) -> tu
             except (OSError, PermissionError):
                 continue
     return direct, nested
-QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
-# On-disk embedded Qdrant, used when no server answers. Keeps the app usable
-# without Docker while still persisting vectors between runs.
-EMBEDDED_QDRANT_PATH = Path(__file__).resolve().parent.parent / ".cache" / "qdrant"
 
 
-def _qdrant_client():
-    """Return (client, description). Prefers a running server, else embedded."""
-    from qdrant_client import QdrantClient
+def _data_files(folder: Path) -> list[Path]:
+    """Indexable files under `folder`, recursively, skipping caches and envs.
 
-    try:
-        client = QdrantClient(url=QDRANT_URL, timeout=2.0)
-        client.get_collections()
-        return client, f"Qdrant server at {QDRANT_URL}"
-    except Exception:
-        EMBEDDED_QDRANT_PATH.mkdir(parents=True, exist_ok=True)
-        return (QdrantClient(path=str(EMBEDDED_QDRANT_PATH)),
-                f"embedded Qdrant at {EMBEDDED_QDRANT_PATH.name}/ (no server running)")
+    Recursive because data usually sits a level down; the picker already
+    counts nested files, so indexing only the top level made those vanish.
+    """
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(folder):
+        dirnames[:] = sorted(d for d in dirnames if _is_browsable_dir(Path(d)))
+        for name in sorted(filenames):
+            path = Path(dirpath) / name
+            if _is_data_file(path):
+                found.append(path)
+    return found
 
 
 def _friendly(exc: Exception) -> str:
     """Turn the failures users actually hit into something actionable."""
     text = str(exc)
     lowered = text.lower()
-    if "same thread" in lowered and "sqlite" in lowered:
-        return ("The local vector store was used from the wrong thread. "
-                "Restart the server; if it persists, run Qdrant with "
-                "`docker compose up -d`.")
-    if "connection refused" in lowered and "6333" in text:
-        return ("Qdrant is not reachable and embedded mode could not start. "
-                "Run `docker compose up -d`, or free the .cache/qdrant folder.")
     if "11434" in text or "ollama serve" in lowered:
-        return "Ollama is not running. Start it with `ollama serve`, then re-index."
-    if isinstance(exc, NoOCREngineAvailableType) if NoOCREngineAvailableType else False:
-        return text
+        return "Ollama is not running. Start it with `ollama serve`, or choose another engine."
+    if "401" in text and "groq" in lowered:
+        return "Groq rejected the API key. Check GROQ_API_KEY in .env, then restart the server."
     return text
 
-app = FastAPI(title="RAG Chat")
 
-# One pipeline per (folder, backend, model). Rebuilding is expensive — the OCR
-# cache makes re-extraction cheap, but chunking and embedding are not free.
-_sessions: dict[str, Any] = {}
+# --------------------------------------------------------------------------
+# Pipeline thread, warm-up and sessions
+# --------------------------------------------------------------------------
+
+
+# All pipeline work runs on ONE dedicated thread. Some stores (SQLite-backed
+# ones, including the FTS5 index) cannot cross threads, and on a laptop
+# concurrent OCR and embedding thrash rather than parallelise. The cost is
+# that one request waits for another, so the stream says so, and a
+# disconnected client cancels its work instead of holding the thread.
+_PIPELINE = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-pipeline")
+_pending = 0
+_pending_lock = threading.Lock()
+
+_warm: dict[str, Any] = {"state": "cold", "seconds": None, "detail": ""}
+
+
+def _warm_up() -> None:
+    """Pay the heavy imports and model loads at startup, not in the first request.
+
+    Importing sentence-transformers alone can take a minute on a cold disk;
+    inside the first "Index folder" that looked like a hung UI.
+    """
+    started = time.perf_counter()
+    _warm["state"] = "warming"
+    try:
+        import ask  # noqa: F401 - torch, sentence-transformers, the pipeline
+        from rerank.cross_encoder import DEFAULT_MODEL, MULTILINGUAL_LIGHT, get_reranker
+        from retrieval.embedder import MULTILINGUAL_MODEL, get_embedder
+
+        get_embedder(MULTILINGUAL_MODEL).model
+        for name in (MULTILINGUAL_LIGHT, DEFAULT_MODEL):
+            get_reranker(name).model
+        _warm.update(state="ready", seconds=round(time.perf_counter() - started, 1))
+    except Exception as exc:
+        logger.exception("Warm-up failed")
+        _warm.update(state="error", detail=str(exc))
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    if os.environ.get("RAG_SKIP_WARMUP") != "1":
+        _PIPELINE.submit(_warm_up)
+    yield
+
+
+app = FastAPI(title="RAG Chat", lifespan=_lifespan)
+
+# One pipeline per (folder, backend, model), most recently used last. Rebuilding
+# costs chunking at least; the OCR cache and stored vectors make it cheap.
+_sessions: "OrderedDict[str, Any]" = OrderedDict()
 _sessions_lock = threading.Lock()
+
+
+def _remember(key: str, pipeline: Any) -> None:
+    with _sessions_lock:
+        _sessions[key] = pipeline
+        _sessions.move_to_end(key)
+        while len(_sessions) > MAX_SESSIONS:
+            _sessions.popitem(last=False)
 
 
 # --------------------------------------------------------------------------
@@ -176,7 +250,7 @@ class IndexRequest(BaseModel):
     folder: str
     backend: str = "auto"
     model: Optional[str] = None
-    ocr_lang: str = "en"
+    ocr_lang: str = "auto"
     max_files: int = 25
     max_pages: Optional[int] = None
 
@@ -191,11 +265,13 @@ class ChatRequest(BaseModel):
 # --------------------------------------------------------------------------
 
 
-def _ollama_models() -> list[str]:
+def _ollama_models() -> list[dict]:
     try:
-        return OllamaBackend().list_models()
+        details = OllamaBackend().list_model_details()
     except Exception:
         return []
+    by_name = {m["name"]: m for m in details}
+    return [by_name[name] for name in preferred_ollama_order(list(by_name))]
 
 
 @app.get("/api/backends")
@@ -203,17 +279,26 @@ def list_backends() -> dict:
     """Report every backend and the models it can actually serve.
 
     Availability is probed live so the picker never offers a backend whose
-    server is down or whose API key is missing.
+    server is down or whose API key is missing. One backend is marked
+    `recommended`: the fastest that can answer here.
     """
     reachable = available_backends()
-    ollama_models = _ollama_models() if reachable.get("ollama") else []
+    ollama = _ollama_models() if reachable.get("ollama") else []
 
     catalogue = [
+        {
+            "id": "groq",
+            "label": "Groq API (fastest)",
+            "available": reachable.get("groq", False),
+            "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"],
+            "hint": "set GROQ_API_KEY in .env",
+        },
         {
             "id": "ollama",
             "label": "Ollama (local)",
             "available": reachable.get("ollama", False),
-            "models": ollama_models,
+            "models": [m["name"] for m in ollama],
+            "sizes": {m["name"]: m["size"] for m in ollama},
             "hint": "ollama serve" if not reachable.get("ollama") else "",
         },
         {
@@ -224,19 +309,11 @@ def list_backends() -> dict:
             "hint": "llama.cpp / LM Studio / vLLM on :8080",
         },
         {
-            "id": "groq",
-            "label": "Groq API",
-            "available": reachable.get("groq", False),
-            "models": ["llama-3.1-8b-instant", "llama-3.3-70b-versatile",
-                       "gemma2-9b-it"],
-            "hint": "set GROQ_API_KEY",
-        },
-        {
             "id": "anthropic",
             "label": "Anthropic API",
             "available": reachable.get("anthropic", False),
             "models": ["claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5"],
-            "hint": "set ANTHROPIC_API_KEY",
+            "hint": "set ANTHROPIC_API_KEY in .env",
         },
         {
             "id": "stub",
@@ -246,6 +323,11 @@ def list_backends() -> dict:
             "hint": "quotes the top evidence; for checking retrieval only",
         },
     ]
+    usable = [b for b in catalogue if b["available"] and b["id"] != "stub"
+              and (b["models"] or b["id"] == "openai")]
+    recommended = usable[0]["id"] if usable else None
+    for backend in catalogue:
+        backend["recommended"] = backend["id"] == recommended
     return {"backends": [b for b in catalogue if b["id"] in BACKENDS]}
 
 
@@ -299,62 +381,105 @@ def browse(path: Optional[str] = None) -> dict:
         "parent": str(target.parent) if target.parent != target else None,
         "dirs": dirs,
         "files": files,
-        "indexable": len(files),
+        "indexable": len(files) + sum(d["data_files"] + d["nested_files"] for d in dirs),
     }
 
 
 # --------------------------------------------------------------------------
-# NDJSON streaming helper
+# NDJSON streaming
 # --------------------------------------------------------------------------
+
+
+# Every hop between here and the browser must pass lines through as they are
+# written: no caching, no transformation (compression buffers), no buffering
+# (nginx and similar honour X-Accel-Buffering).
+_NDJSON_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"}
+
+
+class ClientGone(Exception):
+    """The browser disconnected; its request is abandoned."""
 
 
 def _ndjson(event: dict) -> str:
     return json.dumps(event, ensure_ascii=False) + "\n"
 
 
-# All pipeline work runs on ONE dedicated thread, not a fresh thread per
-# request. Embedded Qdrant stores its data in SQLite, and SQLite connections
-# cannot cross threads — indexing on one request thread and then querying on
-# another raised:
-#
-#     SQLite objects created in a thread can only be used in that same thread
-#
-# A single worker also serialises the expensive stages, which is what we want:
-# concurrent OCR and embedding on a laptop thrash rather than parallelise. The
-# cost is that a long index blocks a chat behind it, which is acceptable for a
-# single-user local tool and far better than a corrupted store.
-_PIPELINE = ThreadPoolExecutor(max_workers=1, thread_name_prefix="rag-pipeline")
+def _stream(request: Request, work) -> StreamingResponse:
+    return StreamingResponse(_stream_worker(request, work),
+                             media_type="application/x-ndjson", headers=_NDJSON_HEADERS)
 
 
-def _stream_worker(work) -> Iterator[str]:
-    """Run `work(emit)` on the pipeline thread, yielding whatever it emits.
+async def _stream_worker(request: Request, work) -> AsyncIterator[str]:
+    """Run `work(emit)` on the pipeline thread, streaming what it emits.
 
-    The pipeline is synchronous and CPU-bound; running it inline would block the
-    event loop and stall every other request, including the browser's own
-    progress rendering.
+    - While the work is silent (OCR, a model load, a CPU model's prompt
+      evaluation) a heartbeat goes out every HEARTBEAT_SECONDS, so neither the
+      UI nor a proxy mistakes a slow step for a dead connection.
+    - When the client disconnects, the next `emit` raises ClientGone inside the
+      worker: generation stops at the next token and the single pipeline thread
+      is free again. An abandoned answer used to keep generating, and every
+      later question queued silently behind it.
     """
+    global _pending
     events: queue.Queue = queue.Queue()
-    sentinel = object()
+    finished = object()
+    cancelled = threading.Event()
+    stage = {"name": "queued"}
 
     def emit(event: dict) -> None:
+        if cancelled.is_set():
+            raise ClientGone()
+        if event.get("stage"):
+            stage["name"] = event["stage"]
         events.put(event)
 
     def run() -> None:
+        global _pending
         try:
-            work(emit)
+            if not cancelled.is_set():
+                stage["name"] = "starting"
+                work(emit)
+        except ClientGone:
+            logger.info("Client disconnected; its request was abandoned.")
         except Exception as exc:
+            logger.exception("Request failed")
             events.put({"type": "error", "message": _friendly(exc),
                         "detail": traceback.format_exc(limit=3)})
         finally:
-            events.put(sentinel)
+            with _pending_lock:
+                _pending -= 1
+            events.put(finished)
 
+    with _pending_lock:
+        ahead = _pending
+        _pending += 1
     _PIPELINE.submit(run)
 
-    while True:
-        event = events.get()
-        if event is sentinel:
-            return
-        yield _ndjson(event)
+    if _warm["state"] == "warming":
+        yield _ndjson({"type": "status", "stage": "warming",
+                       "message": "Loading the embedding and ranking models (first start only)..."})
+    if ahead:
+        yield _ndjson({"type": "status", "stage": "queued",
+                       "message": f"Waiting for {ahead} earlier request(s) to finish..."})
+
+    started = time.perf_counter()
+    try:
+        while True:
+            try:
+                event = await asyncio.to_thread(events.get, True, HEARTBEAT_SECONDS)
+            except queue.Empty:
+                if await request.is_disconnected():
+                    return
+                yield _ndjson({"type": "heartbeat", "stage": stage["name"],
+                               "elapsed": round(time.perf_counter() - started, 1)})
+                continue
+            if event is finished:
+                return
+            yield _ndjson(event)
+    finally:
+        # Runs on normal completion and when the client goes away (the
+        # response task is cancelled at the await above).
+        cancelled.set()
 
 
 # --------------------------------------------------------------------------
@@ -382,82 +507,64 @@ def _build(request: IndexRequest, emit) -> None:
     # Imported lazily: these pull in torch and sentence-transformers, and the
     # server should start instantly even when no model is installed.
     import ask
-    from ingestion.documents import Document  # noqa: F401
 
     folder = Path(request.folder).expanduser().resolve()
     if not folder.is_dir():
         raise ValueError(f"Not a folder: {folder}")
 
-    candidates = sorted(
-        p for p in folder.iterdir() if p.is_file() and _is_data_file(p)
-    )[: request.max_files]
-
+    candidates = _data_files(folder)[: request.max_files]
     if not candidates:
         raise ValueError(
             f"No indexable files in {folder}. "
             f"Supported: {', '.join(sorted(SUPPORTED_SUFFIXES))}"
         )
+    total = len(candidates)
 
-    emit({"type": "progress", "stage": "scan",
-          "message": f"Found {len(candidates)} file(s) in {folder.name}",
-          "current": 0, "total": len(candidates)})
+    def progress(message: str, stage: str, current: Optional[int] = None) -> None:
+        emit({"type": "progress", "stage": stage, "message": message,
+              "current": current, "total": total})
+
+    ocr_lang = ask.detect_ocr_lang(folder, request.ocr_lang)
+    progress(f"Found {total} file(s) in {folder.name} · OCR language {ocr_lang}", "scan", 0)
 
     # One extractor for the whole folder: it owns the OCR engine, and building
     # one per file reloaded the model for every PDF.
-    extractor = ask.make_extractor(ocr_lang=request.ocr_lang)
+    extractor = ask.make_extractor(ocr_lang=ocr_lang, workers=OCR_WORKERS)
 
     documents = []
     for position, path in enumerate(candidates, 1):
-        emit({"type": "progress", "stage": "extract",
-              "message": f"Extracting {path.name}",
-              "current": position, "total": len(candidates)})
+        progress(f"Extracting {path.name}", "extract", position - 1)
         started = time.perf_counter()
         try:
-            documents.extend(
-                ask.load_file(path, ocr_lang=request.ocr_lang,
-                              max_pages=request.max_pages, extractor=extractor)
-            )
+            docs = ask.load_file(path, ocr_lang=ocr_lang, max_pages=request.max_pages,
+                                 workers=OCR_WORKERS, extractor=extractor)
         except Exception as exc:
             # One unreadable file must not abandon an expensive multi-file run.
-            emit({"type": "progress", "stage": "extract",
-                  "message": f"Skipped {path.name}: {exc}",
-                  "current": position, "total": len(candidates)})
+            progress(f"Skipped {path.name}: {exc}", "extract", position)
             continue
-        emit({"type": "progress", "stage": "extract",
-              "message": f"{path.name}: {len(documents)} units "
-                         f"({time.perf_counter() - started:.1f}s)",
-              "current": position, "total": len(candidates)})
+        documents.extend(docs)
+        progress(f"{path.name}: {len(docs)} page(s) in {time.perf_counter() - started:.1f}s",
+                 "extract", position)
 
     if not documents:
         raise ValueError("No text could be extracted from any file.")
 
-    emit({"type": "progress", "stage": "index",
-          "message": f"Chunking and indexing {len(documents)} units",
-          "current": len(candidates), "total": len(candidates)})
-
-    collection = _collection_name(folder)
-
-    client, where = _qdrant_client()
-    emit({"type": "progress", "stage": "index", "message": f"Vector store: {where}",
-          "current": len(candidates), "total": len(candidates)})
-
     pipeline = ask.build_pipeline(
         documents,
-        collection,
+        _collection_name(folder),
         backend=request.backend,
         model=request.model,
-        qdrant_client=client,
+        progress=lambda message: progress(message.lstrip("[*+!] "), "index", total),
     )
 
     key = _session_key(request)
-    with _sessions_lock:
-        _sessions[key] = pipeline
+    _remember(key, pipeline)
 
     emit({
         "type": "done",
         "session_id": key,
         "documents": len(documents),
-        "files": len(candidates),
+        "files": total,
         "folder": str(folder),
         "backend": getattr(pipeline.llm, "name", request.backend),
         "model": getattr(pipeline.llm, "model", request.model or ""),
@@ -465,11 +572,8 @@ def _build(request: IndexRequest, emit) -> None:
 
 
 @app.post("/api/index")
-def index_folder(request: IndexRequest) -> StreamingResponse:
-    return StreamingResponse(
-        _stream_worker(lambda emit: _build(request, emit)),
-        media_type="application/x-ndjson",
-    )
+def index_folder(body: IndexRequest, request: Request) -> StreamingResponse:
+    return _stream(request, lambda emit: _build(body, emit))
 
 
 # --------------------------------------------------------------------------
@@ -480,6 +584,8 @@ def index_folder(request: IndexRequest) -> StreamingResponse:
 def _answer(request: ChatRequest, emit) -> None:
     with _sessions_lock:
         pipeline = _sessions.get(request.session_id)
+        if pipeline is not None:
+            _sessions.move_to_end(request.session_id)
     if pipeline is None:
         raise ValueError("This folder is no longer indexed. Index it again.")
 
@@ -487,11 +593,10 @@ def _answer(request: ChatRequest, emit) -> None:
     if not question:
         raise ValueError("Empty question.")
 
-    emit({"type": "status", "message": "Retrieving evidence..."})
-
     result = pipeline.answer(
         question,
         stream_callback=lambda token: emit({"type": "token", "text": token}),
+        on_stage=lambda name, message: emit({"type": "status", "stage": name, "message": message}),
     )
 
     citations = []
@@ -517,16 +622,13 @@ def _answer(request: ChatRequest, emit) -> None:
 
 
 @app.post("/api/chat")
-def chat(request: ChatRequest) -> StreamingResponse:
-    return StreamingResponse(
-        _stream_worker(lambda emit: _answer(request, emit)),
-        media_type="application/x-ndjson",
-    )
+def chat(body: ChatRequest, request: Request) -> StreamingResponse:
+    return _stream(request, lambda emit: _answer(body, emit))
 
 
 @app.get("/api/health")
 def health() -> dict:
-    return {"ok": True, "sessions": len(_sessions)}
+    return {"ok": True, "sessions": len(_sessions), "warm": dict(_warm)}
 
 
 # --------------------------------------------------------------------------
@@ -534,12 +636,16 @@ def health() -> dict:
 # --------------------------------------------------------------------------
 
 
-@app.get("/")
-def root() -> FileResponse:
-    return FileResponse(STATIC_DIR / "index.html")
+if (WEB_OUT / "index.html").exists():
+    # The exported Next.js UI, served by this process: one port, no proxy.
+    # Mounted last, so every /api route above still wins.
+    app.mount("/", StaticFiles(directory=str(WEB_OUT), html=True), name="web")
+else:
+    @app.get("/")
+    def root() -> FileResponse:
+        return FileResponse(STATIC_DIR / "index.html")
 
-
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 def run(host: str = "127.0.0.1", port: Optional[int] = None) -> None:
@@ -548,7 +654,7 @@ def run(host: str = "127.0.0.1", port: Optional[int] = None) -> None:
 
     parser = argparse.ArgumentParser(description="Run the RAG chat server.")
     parser.add_argument("--host", type=str, default=host, help="Host to bind to")
-    parser.add_argument("--port", type=int, default=port or int(os.environ.get("PORT", "8080")), help="Port to bind to")
+    parser.add_argument("--port", type=int, default=port or int(os.environ.get("PORT", "8000")), help="Port to bind to")
     args, _ = parser.parse_known_args()
 
     print(f"[*] Starting RAG Chat server on http://{args.host}:{args.port}")

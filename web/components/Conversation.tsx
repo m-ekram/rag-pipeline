@@ -100,15 +100,26 @@ function Turn({ turn }: { turn: ChatTurn }) {
         </Banner>
       ) : (
         <div className="flex flex-col gap-4">
-          <div
-            lang={hindi.test(turn.answer) ? "hi" : undefined}
-            className={`text-[15.5px] leading-[1.7] whitespace-pre-wrap ${
-              turn.streaming && !turn.answer ? "caret text-muted" : ""
-            }`}
-          >
-            {turn.answer}
-            {turn.streaming && turn.answer ? <span className="caret" /> : null}
-          </div>
+          {turn.streaming && !turn.answer ? (
+            // Until the first token, say what the backend is doing and for how
+            // long: a silent caret for a minute reads as a broken app.
+            <p className="caret text-[14px] text-muted">
+              {turn.activity ?? "Sending question…"}
+              {turn.elapsed ? (
+                <span className="ml-2 font-mono text-[11px] text-faint">
+                  {Math.round(turn.elapsed)}s
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <div
+              lang={hindi.test(turn.answer) ? "hi" : undefined}
+              className="text-[15.5px] leading-[1.7] whitespace-pre-wrap"
+            >
+              {turn.answer}
+              {turn.streaming ? <span className="caret" /> : null}
+            </div>
+          )}
 
           {turn.citations && turn.citations.length > 0 && (
             <Provenance citations={turn.citations} />
@@ -163,9 +174,19 @@ function Metrics({ metrics }: { metrics: AnswerMetrics }) {
     ["grounded", metrics.grounded ? "yes" : "no"],
     ["tokens", `${metrics.input_tokens}→${metrics.output_tokens}`],
   ];
-  if (metrics.model) items.push(["model", metrics.model]);
-  if (metrics.latency_generation_ms)
-    items.push(["gen", `${(metrics.latency_generation_ms / 1000).toFixed(1)}s`]);
+  const engine = [metrics.backend, metrics.model].filter(Boolean).join(" · ");
+  if (engine) items.push(["engine", engine]);
+  // Time per stage, so a slow answer shows where the time went.
+  const stages: [string, number | undefined][] = [
+    ["search", metrics.latency_retrieval_ms],
+    ["rerank", metrics.latency_rerank_ms],
+    ["gen", metrics.latency_generation_ms],
+  ];
+  for (const [label, ms] of stages) {
+    if (ms != null) {
+      items.push([label, ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`]);
+    }
+  }
   if (metrics.cost_usd) items.push(["cost", `$${metrics.cost_usd.toFixed(5)}`]);
 
   return (
