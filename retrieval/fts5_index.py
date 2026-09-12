@@ -307,6 +307,11 @@ class FTS5Index:
         cursor = self.con.execute(sql, params)
         return [_row_to_chunk(cid, text, meta_json) for cid, text, meta_json in cursor.fetchall()]
 
+    def document_names(self) -> list[str]:
+        """Distinct source documents: doc ids without their `#p<page>` suffix."""
+        rows = self.con.execute("SELECT DISTINCT doc_id FROM chunks_fts").fetchall()
+        return sorted({str(doc_id).split("#", 1)[0] for (doc_id,) in rows})
+
     def fuzzy_search_epic(
         self, target_epic: str, max_distance: int = 2, limit: int = 5
     ) -> list[ScoredChunk]:

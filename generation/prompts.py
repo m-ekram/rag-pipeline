@@ -140,10 +140,28 @@ def _as_chunks(candidates: Iterable) -> list[Chunk]:
     return chunks
 
 
-def format_evidence(chunks: Sequence[Chunk]) -> str:
-    """Number the evidence so the model can cite it positionally."""
+def _evidence_label(chunk: Chunk) -> str:
+    """Where one piece of evidence came from, e.g. "(pmp-2031-report, p. 66) "."""
+    parts = [chunk.title] if chunk.title else []
+    if chunk.page is not None:
+        parts.append(f"p. {chunk.page}")
+    return f"({', '.join(parts)}) " if parts else ""
+
+
+def _spans_documents(chunks: Sequence[Chunk]) -> bool:
+    return len({c.title or c.doc_id.split("#", 1)[0] for c in chunks}) > 1
+
+
+def format_evidence(chunks: Sequence[Chunk], *, labelled: bool = False) -> str:
+    """Number the evidence so the model can cite it positionally.
+
+    `labelled` prefixes each item with its document and page. Evidence from a
+    folder of several documents otherwise reaches the model as anonymous
+    passages, and it cannot tell the Master Plan's page 66 from a roll's.
+    """
     return "\n\n".join(
-        f"[{i}] {chunk.text.strip()}" for i, chunk in enumerate(chunks, 1)
+        f"[{i}] {_evidence_label(chunk) if labelled else ''}{chunk.text.strip()}"
+        for i, chunk in enumerate(chunks, 1)
     )
 
 
@@ -162,12 +180,14 @@ def build_prompt(
     model cite text it never received.
     """
     chunks = _as_chunks(candidates)[:max_evidence]
+    labelled = _spans_documents(chunks)
 
     kept: list[Chunk] = []
     used = 0
     dropped = 0
     for chunk in chunks:
-        cost = estimate_tokens(chunk.text) + 4  # marker + separator
+        label = _evidence_label(chunk) if labelled else ""
+        cost = estimate_tokens(label + chunk.text) + 4  # marker + separator
         if kept and used + cost > evidence_token_budget:
             dropped += 1
             continue
@@ -219,7 +239,7 @@ def build_prompt(
                 system = f"{system}\n9. You MUST write your final answer strictly in English language."
 
     prompt = PROMPT_TEMPLATE.format(
-        evidence=format_evidence(kept) if kept else "(none)",
+        evidence=format_evidence(kept, labelled=labelled) if kept else "(none)",
         question=question.strip(),
         abstain=ABSTAIN_TOKEN,
     )

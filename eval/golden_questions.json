@@ -1,0 +1,24 @@
+{
+  "_comment": "Questions per demo folder (keys match data/demo/<key>). Each exercises a different retrieval route: tables, page lookups, structured voter records, semantic prose.",
+  "pmp": [
+    "What is the proposed land use percentage for residential use?",
+    "What is on page 66 of the master plan?",
+    "What is the projected population of Patna for 2031?",
+    "What are the widths of the major roads?",
+    "Which agencies are responsible for implementing the master plan?"
+  ],
+  "rolls": [
+    "What is the name and address of the polling station?",
+    "How many total voters are in this part?",
+    "How many male and female voters are there?",
+    "Who lives in house number 4?",
+    "What are the details of serial number 10?"
+  ],
+  "paper": [
+    "What is the main contribution of this paper?",
+    "What methodology or dataset does the study use?",
+    "What are the key findings?",
+    "What limitations do the authors mention?",
+    "What does the paper recommend for future work?"
+  ]
+}

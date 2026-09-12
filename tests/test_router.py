@@ -286,3 +286,19 @@ def test_relation_lookup_returns_more_than_the_default_limit(tmp_path):
     router = IntentRouter(lexical=fts, dense=None)
     assert len(router.retrieve("Which voters have father name Zahid Khan?", limit=10)) == 25
 
+
+def test_page_lookup_reads_the_named_documents_page(tmp_path):
+    """In a folder of several PDFs, "page 66" returned page 66 of every file."""
+    fts = FTS5Index(db_path=tmp_path / "pages.db")
+    fts.build([
+        Chunk(chunk_id="pmp::0", doc_id="pmp-2031-report#p66", ordinal=0, page=66,
+              text="Proposed land use distribution table"),
+        Chunk(chunk_id="roll::0", doc_id="2025-EROLLGEN-S04-183-HIN-101#p66", ordinal=0, page=66,
+              text="Voter list continued"),
+    ])
+    router = IntentRouter(lexical=fts, dense=None)
+
+    named = router.retrieve("What is on page 66 of the Patna Master Plan?")
+    assert [h.chunk_id for h in named] == ["pmp::0"]
+    assert len(router.retrieve("What is on page 66?")) == 2
+

@@ -178,6 +178,44 @@ class QueryIntent(enum.Enum):
     HYBRID_SEMANTIC = "hybrid_semantic"
 
 
+_NAME_WORDS = re.compile(r"[a-z]+|\d+")
+# Words that name no particular document.
+_GENERIC_WORDS = frozenset({
+    "page", "pdf", "the", "of", "on", "in", "what", "is", "report", "document",
+    "doc", "file", "final", "roll", "show", "me", "tell", "about",
+})
+
+
+def _match_document(query: str, names: Sequence[str], *, ignore: frozenset | set = frozenset()) -> Optional[str]:
+    """The single document a query names, or None.
+
+    A document is named when a query word equals one of its name's words
+    ("roll 101", "pmp"), or when consecutive query words' initials spell one
+    ("patna master plan" -> "pmp" for pmp-2031-report). Ties name nothing:
+    returning every matching document is safer than guessing one.
+    """
+    if len(names) < 2:
+        return None
+    words = [w for w in _NAME_WORDS.findall(query.lower()) if w not in ignore]
+    wanted = {w for w in words if w not in _GENERIC_WORDS}
+    initials = {
+        "".join(w[0] for w in words[i:i + n])
+        for n in (2, 3, 4)
+        for i in range(len(words) - n + 1)
+    }
+    scores = {}
+    for name in names:
+        name_words = {w for w in _NAME_WORDS.findall(name.lower()) if w not in _GENERIC_WORDS}
+        score = len(name_words & wanted) + len(name_words & initials)
+        if score:
+            scores[name] = score
+    if not scores:
+        return None
+    best = max(scores.values())
+    winners = [name for name, score in scores.items() if score == best]
+    return winners[0] if len(winners) == 1 else None
+
+
 # A relation name ends where the next clause begins. The capture class admits
 # spaces, so "father name Md Zahid Khan and live in house 4" captured "... and
 # live in house", and every trailing word became a required search term.
@@ -254,12 +292,20 @@ class IntentRouter:
 
         if intent == QueryIntent.PAGE_LOOKUP:
             page_num = params["page_num"]
-            logger.info("Routing query to PAGE_LOOKUP for page %d", page_num)
+            # In a folder of several PDFs, "page 66 of the master plan" must read
+            # that document's page 66, not page 66 of every file.
+            document = None
+            if self.lexical and hasattr(self.lexical, "document_names"):
+                document = _match_document(query, self.lexical.document_names(),
+                                           ignore={str(page_num)})
+            doc_id = f"{document}#p{page_num}" if document else None
+            logger.info("Routing query to PAGE_LOOKUP for page %d of %s",
+                        page_num, document or "any document")
             page_chunks = []
             if self.lexical and hasattr(self.lexical, "get_by_page"):
-                page_chunks = self.lexical.get_by_page(page_num)
+                page_chunks = self.lexical.get_by_page(page_num, doc_id=doc_id)
             if not page_chunks and self.dense and hasattr(self.dense, "get_by_page"):
-                page_chunks = self.dense.get_by_page(page_num)
+                page_chunks = self.dense.get_by_page(page_num, doc_id=doc_id)
 
             candidates = [
                 ScoredChunk(chunk_id=c.chunk_id, score=1.0 - (idx * 0.01), rank=idx + 1, chunk=c)

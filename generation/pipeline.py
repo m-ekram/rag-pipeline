@@ -189,9 +189,13 @@ class RAGPipeline:
         *,
         stream_callback: Optional[Any] = None,
         target_lang: Optional[str] = None,
+        on_stage: Optional[Any] = None,
     ) -> AnswerResult:
+        """Answer `question`; `on_stage(name, message)` is told as each stage starts."""
         timings: dict[str, float] = {}
+        stage = on_stage or (lambda name, message: None)
 
+        stage("retrieval", "Searching and ranking evidence...")
         started = time.perf_counter()
         sub_queries = self._decompose_query(question)
         intents = []
@@ -223,6 +227,7 @@ class RAGPipeline:
         retriever_reranks = getattr(self.retriever, "reranker", None) is not None
 
         if self.reranker is not None and candidates and not has_exact_hits and not retriever_reranks:
+            stage("rerank", f"Reranking {len(candidates)} candidates...")
             started = time.perf_counter()
             candidates = self.reranker.rerank(
                 question, candidates, limit=evidence_limit
@@ -266,6 +271,8 @@ class RAGPipeline:
             if "stream_callback" in sig.parameters or any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
                 complete_kwargs["stream_callback"] = stream_callback
 
+        stage("generation", f"Generating with {getattr(self.llm, 'name', 'model')} · "
+                            f"{getattr(self.llm, 'model', '')}...")
         started = time.perf_counter()
         response = self.llm.complete(
             built.prompt,

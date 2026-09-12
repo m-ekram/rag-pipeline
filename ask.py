@@ -33,26 +33,48 @@ if hasattr(sys.stdout, "reconfigure"):
 
 from generation.abstention import ThresholdGate
 from console import use_utf8_console
-from generation.llm import GroqBackend, OllamaBackend, get_llm
-from generation.pipeline import RAGPipeline
-from ingestion.chunking import (
-    ElectoralRecordChunker,
-    FixedSizeChunker,
-    StructureAwareParentChildChunker,
+from generation.llm import (
+    FallbackBackend,
+    GroqBackend,
+    OllamaBackend,
+    get_llm,
+    preferred_ollama_order,
 )
+from generation.pipeline import RAGPipeline
+from ingestion.chunking import FixedSizeChunker, StructureAwareParentChildChunker
 from ingestion.documents import Chunk, Document
-from ingestion.electoral import is_electoral_text
 from ingestion.pdf_extractor import PDFExtractor
 from ingestion.pipeline import chunk_corpus
-from rerank.cross_encoder import (
-    CrossEncoderReranker,
-    DEFAULT_MODEL,
-    MULTILINGUAL_LIGHT,
-)
-from retrieval.dense import DenseIndex
-from retrieval.embedder import Embedder
+from rerank.cross_encoder import DEFAULT_MODEL, MULTILINGUAL_LIGHT, get_reranker
+from retrieval.dense import make_dense_index
+from retrieval.embedder import MULTILINGUAL_MODEL, get_embedder
 from retrieval.fts5_index import FTS5Index
 from retrieval.router import IntentRouter
+
+# Path fragments of Urdu (InPage / Nastaliq) sources.
+_URDU_MARKERS = ("urdu", "bang-i-dara", "iqbal")
+# "-HIN-" in the Bihar electoral roll file names. A bare substring test also
+# matched ordinary words such as "WITHIN".
+_HINDI_FILE = re.compile(r"(?:^|[^A-Z])HIN(?:[^A-Z]|$)")
+
+
+def detect_ocr_lang(doc_path: Path, requested: str = "auto") -> str:
+    """OCR language for a file or folder; shared by the CLI and the API.
+
+    "auto" (and the old default "en") read the file names. Hindi electoral
+    rolls always need "hin+eng": the names are Devanagari, the EPIC IDs Latin.
+    The API used to OCR every folder as English unless told otherwise, which
+    turned the Hindi rolls into noise.
+    """
+    requested = (requested or "auto").lower()
+    names = [p.name for p in doc_path.rglob("*.pdf")] if doc_path.is_dir() else [doc_path.name]
+    if requested in ("auto", "en", "hi") and any(_HINDI_FILE.search(n.upper()) for n in names):
+        return "hin+eng"
+    if requested == "hi":
+        return "hin+eng"
+    if requested in ("auto", "en") and any(k in str(doc_path).lower() for k in _URDU_MARKERS):
+        return "urd"
+    return "en" if requested == "auto" else requested
 
 
 def make_extractor(
@@ -189,6 +211,82 @@ def sanitize_collection_name(file_path: Path) -> str:
     return f"doc_{INDEX_VERSION}_{clean[:17]}_{digest}"
 
 
+_MANIFEST_DIR = Path(__file__).resolve().parent / ".cache" / "index_manifests"
+_DEVANAGARI = re.compile("[ऀ-ॿ]")
+_ARABIC_SCRIPT = re.compile("[؀-ۿ]")
+
+
+def _corpus_fingerprint(chunks: list[Chunk], embedder_name: str) -> str:
+    """Hash of exactly what gets embedded. Equal hashes mean stored vectors are still valid."""
+    digest = hashlib.sha256(f"{INDEX_VERSION}|{embedder_name}".encode("utf-8"))
+    for c in chunks:
+        digest.update(f"{c.chunk_id}\x00{c.text}\x01".encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _stored_fingerprint(collection: str) -> Optional[str]:
+    try:
+        return (_MANIFEST_DIR / f"{collection}.sha256").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+
+
+def _store_fingerprint(collection: str, fingerprint: str) -> None:
+    _MANIFEST_DIR.mkdir(parents=True, exist_ok=True)
+    (_MANIFEST_DIR / f"{collection}.sha256").write_text(fingerprint, encoding="utf-8")
+
+
+def _choose_reranker(docs: list[Document]) -> Optional[str]:
+    """Cross-encoder for this corpus, judged from its text rather than file names.
+
+    Devanagari (with or without Latin) needs the multilingual model, which was
+    trained on mMARCO's Hindi. No available cross-encoder covers Urdu, so an
+    Urdu-only corpus ranks with multilingual dense + FTS5 alone.
+    """
+    indic = any(_DEVANAGARI.search(d.text) for d in docs)
+    arabic = any(_ARABIC_SCRIPT.search(d.text) for d in docs)
+    if arabic and not indic:
+        return None
+    return MULTILINGUAL_LIGHT if indic or arabic else DEFAULT_MODEL
+
+
+def _pick_ollama(model: Optional[str]) -> Optional[OllamaBackend]:
+    """Ollama serving `model`, or its preferred installed model; None if Ollama is down."""
+    probe = OllamaBackend(model=model or "llama3.1:8b", timeout=600.0)
+    if not probe.available():
+        return None
+    if model:
+        return probe
+    try:
+        installed = preferred_ollama_order(probe.list_models())
+    except Exception:
+        return None
+    return OllamaBackend(model=installed[0], timeout=600.0) if installed else None
+
+
+def resolve_llm(backend: Optional[str], model: Optional[str], *, progress=print):
+    """The answer engine for `backend`.
+
+    Groq, when chosen or when "auto" finds a key, gets the local Ollama model
+    as a fallback: a rate limit or a dropped connection then costs speed rather
+    than the answer.
+    """
+    chosen = (backend or "auto").lower()
+    if chosen == "groq" or (chosen == "auto" and os.environ.get("GROQ_API_KEY")):
+        groq = GroqBackend(model=model or "llama-3.1-8b-instant")
+        if groq.available():
+            fallback = _pick_ollama(None)
+            return FallbackBackend(groq, fallback) if fallback else groq
+        progress("[!] Groq selected but GROQ_API_KEY is not set to a valid gsk_... key; trying a local engine.")
+        chosen = "auto"
+        model = None
+    if chosen in ("ollama", "auto"):
+        ollama = _pick_ollama(model)
+        if ollama is not None:
+            return ollama
+    return get_llm(chosen, model=model)
+
+
 def build_pipeline(
     docs: list[Document],
     collection_name: str,
@@ -201,68 +299,53 @@ def build_pipeline(
     backend: Optional[str] = "auto",
     model: Optional[str] = None,
     reindex: bool = False,
-    qdrant_client=None,
+    dense_index=None,
+    progress=print,
 ) -> RAGPipeline:
-    """Build chunks, indexes, retriever, and RAGPipeline."""
-    has_electoral = any(is_electoral_text(d.text) for d in docs)
-    if has_electoral:
-        print("[*] Detected electoral document: using ElectoralRecordChunker (Household Co-Location Grouping)...")
-        chunker = ElectoralRecordChunker(records_per_chunk=5)
-    else:
-        print(f"[*] Chunking {len(docs)} document units with StructureAwareParentChildChunker (preserving tables & parent context)...")
-        chunker = StructureAwareParentChildChunker(rows_per_child=3, text_child_words=chunk_size)
+    """Build chunks, indexes, retriever, and RAGPipeline.
 
+    `progress` receives one line per step: the CLI prints them, the API streams
+    them to the browser.
+    """
+    # One chunker for every page: it hands each electoral page to the voter-card
+    # chunker itself. Picking a single chunker for the whole corpus sent a mixed
+    # folder's Master Plan through the voter-card chunker and lost its tables.
+    progress(f"[*] Chunking {len(docs)} document units (tables, sections and voter records kept whole)...")
+    chunker = StructureAwareParentChildChunker(rows_per_child=3, text_child_words=chunk_size)
     chunks: list[Chunk] = list(chunk_corpus(docs, chunker))
     if not chunks:
-        # Fallback to fixed chunker if sentence chunker produced nothing
+        # Fallback to fixed chunker if the structure-aware chunker produced nothing
         chunks = list(chunk_corpus(docs, FixedSizeChunker(chunk_size=chunk_size, overlap=overlap)))
-    print(f"[+] Created {len(chunks)} chunks.")
+    progress(f"[+] Created {len(chunks)} chunks.")
 
-    print("[*] Building SQLite FTS5 lexical index (slash-safe & scalable)...")
+    progress("[*] Building SQLite FTS5 lexical index...")
     fts5 = FTS5Index().build(chunks)
 
-    print(f"[*] Connecting to Qdrant ({collection_name})...")
-    embedder = Embedder("intfloat/multilingual-e5-small")
-    # An explicit client lets callers use embedded/on-disk Qdrant when no
-    # server is running — a desktop app should not require Docker.
-    dense = DenseIndex(collection_name, embedder=embedder, client=qdrant_client)
-
-    already_indexed = False
-    if dense.client.collection_exists(collection_name):
-        try:
-            pt_count = dense.client.count(collection_name).count
-            if pt_count == len(chunks) and not reindex:
-                already_indexed = True
-                print(f"[+] Reusing existing vector index ({pt_count} chunks). Use --reindex to force rebuild.")
-        except Exception:
-            already_indexed = False
-
-    if not already_indexed:
-        print(f"[*] Building vector index ({len(chunks)} chunks with INT8 Scalar Quantization)...")
+    embedder = get_embedder(MULTILINGUAL_MODEL)
+    dense = dense_index or make_dense_index(collection_name, embedder)
+    # Reuse is decided by a hash of the chunk texts, not a chunk count: a
+    # changed file with the same number of chunks must be re-embedded, and an
+    # unchanged folder re-opened after a restart must not be.
+    fingerprint = _corpus_fingerprint(chunks, embedder.model_name)
+    if (not reindex and dense.exists() and dense.count() == len(chunks)
+            and _stored_fingerprint(collection_name) == fingerprint):
+        progress(f"[+] Reusing the stored vector index ({len(chunks)} chunks). Use --reindex to rebuild.")
+    else:
+        progress(f"[*] Embedding {len(chunks)} chunks into {type(dense).__name__}...")
+        started = time.perf_counter()
         dense.recreate()
-        # DenseIndex's default batch (256): every flush is a blocking
-        # upsert(wait=True), so 32-chunk batches paid that round trip 8x as often.
         dense.index(chunks, show_progress=False)
-        print(f"[+] Indexed {len(chunks)} chunks in Qdrant.")
-
-    is_urdu = any("urdu" in (d.source or "").lower() or "bang-i-dara" in (d.source or "").lower() or "iqbal" in (d.source or "").lower() for d in docs)
+        _store_fingerprint(collection_name, fingerprint)
+        progress(f"[+] Embedded {len(chunks)} chunks in {time.perf_counter() - started:.1f}s.")
 
     reranker = None
     if use_reranker:
-        if reranker_model:
-            chosen_reranker = reranker_model
-        elif has_electoral:
-            chosen_reranker = MULTILINGUAL_LIGHT
-            print(f"[*] Electoral/Indic document detected: auto-selected multilingual reranker ({MULTILINGUAL_LIGHT})")
-        elif is_urdu:
-            # Urdu documents use dense multilingual-e5 + SQLite FTS5 for highest recall without English bias
-            chosen_reranker = None
-            print("[*] Urdu document detected: bypassing English cross-encoder in favor of multilingual dense + FTS5 retrieval.")
-        else:
-            chosen_reranker = DEFAULT_MODEL
+        chosen_reranker = reranker_model or _choose_reranker(docs)
         if chosen_reranker:
-            print(f"[*] Initializing cross-encoder reranker ({chosen_reranker})...")
-            reranker = CrossEncoderReranker(chosen_reranker)
+            progress(f"[*] Loading reranker {chosen_reranker}...")
+            reranker = get_reranker(chosen_reranker)
+        else:
+            progress("[*] Urdu corpus: no cross-encoder covers Urdu; ranking with multilingual dense + FTS5.")
 
     # Intent Router combining Page Lookup, Exact Entity match, Hybrid RRF, and neural reranker
     retriever = IntentRouter(
@@ -275,53 +358,32 @@ def build_pipeline(
     # Threshold gate: abstain if top evidence is poor
     gate = ThresholdGate(threshold=threshold)
 
-    # Resolve LLM backend
-    chosen_backend = (backend or "auto").lower()
-    if chosen_backend == "groq" or (chosen_backend == "auto" and os.environ.get("GROQ_API_KEY")):
-        target_model = model or "llama-3.1-8b-instant"
-        llm = GroqBackend(model=target_model)
-        if not llm.available():
-            print(f"[!] Groq backend selected but no valid GROQ_API_KEY found (starts with gsk_).")
-            llm = get_llm(model=target_model)
-    elif chosen_backend == "ollama" or chosen_backend == "auto":
-        target_model = model
-        ollama = OllamaBackend(model=target_model or "llama3.1:8b", timeout=600.0)
-        if ollama.available() and target_model is None:
-            # Auto-detect best/fastest model installed in Ollama
-            try:
-                installed = ollama.list_models()
-                for fast_candidate in ("qwen2.5:1.5b", "llama3.2:1b", "llama3.2:3b", "qwen2.5:3b", "llama3.1:8b"):
-                    matched = [m for m in installed if m.startswith(fast_candidate)]
-                    if matched:
-                        target_model = matched[0]
-                        ollama = OllamaBackend(model=target_model, timeout=600.0)
-                        break
-            except Exception:
-                pass
-        llm = ollama if ollama.available() else get_llm(chosen_backend, model=target_model)
-    else:
-        llm = get_llm(chosen_backend, model=model)
+    llm = resolve_llm(backend, model, progress=progress)
+    progress(f"[+] Pipeline ready. Answer engine: {llm.name} ({llm.model})")
 
-    print(f"[+] Pipeline ready! Using LLM: {llm.name} ({llm.model})")
-    pipeline = RAGPipeline(
-        retriever=retriever,
-        gate=gate,
-        reranker=reranker,
-        llm=llm,
-        candidate_limit=15,
-        evidence_limit=5,
-        evidence_token_budget=1200,
-        max_answer_tokens=250,
-    )
+    # Prompt size is the main lever on answer latency. A CPU model evaluates the
+    # prompt at tens of tokens per second, so it gets the small local preset; a
+    # hosted engine reads a few thousand tokens in well under a second.
+    if getattr(llm, "name", "") in ("ollama", "openai"):
+        pipeline = RAGPipeline.for_local_model(
+            retriever, gate, reranker=reranker, llm=llm, candidate_limit=15,
+            roster_token_budget=2000,
+        )
+    else:
+        pipeline = RAGPipeline(
+            retriever, gate, reranker=reranker, llm=llm, candidate_limit=15,
+            evidence_limit=6, evidence_token_budget=2500, max_answer_tokens=400,
+            roster_token_budget=4000,
+        )
 
     # Load the model now rather than inside the first question. A cold Ollama
     # pays a multi-GB weight load on its first request; leaving that inside the
     # request means the read timeout has to cover it, which is what produced
     # httpx.ReadTimeout on the first question.
     if hasattr(llm, "warmup"):
-        print(f"[*] Warming up {llm.model} (loading weights)...")
+        progress(f"[*] Warming up {llm.model} (loading weights)...")
         seconds = pipeline.warmup()
-        print(f"[+] Model resident in {seconds:.1f}s.")
+        progress(f"[+] Model resident in {seconds:.1f}s.")
 
     return pipeline
 
@@ -439,18 +501,10 @@ def main():
             print("[+] Purged all extraction disk caches (.cache/extraction).")
         args.reindex = True
 
-    # Auto-detect Hindi language for electoral roll PDFs (always bilingual hin+eng for IDs & names)
-    is_hindi_electoral = "HIN" in doc_path.name.upper() or (doc_path.is_dir() and any("HIN" in p.name.upper() for p in doc_path.rglob("*.pdf")))
-    if (args.ocr_lang in ("en", "hi")) and is_hindi_electoral:
-        args.ocr_lang = "hin+eng"
-        print("[*] Auto-detected Hindi electoral document(s): set OCR language to 'hin+eng' (bilingual Hindi names + English IDs)")
-    elif args.ocr_lang == "hi":
-        args.ocr_lang = "hin+eng"
-
-    # Auto-detect Urdu language
-    if args.ocr_lang == "en" and any(k in str(doc_path).lower() for k in ["urdu", "bang-i-dara", "iqbal"]):
-        args.ocr_lang = "urd"
-        print(f"[*] Auto-detected Urdu document: set OCR language to 'urd'")
+    detected = detect_ocr_lang(doc_path, args.ocr_lang)
+    if detected != args.ocr_lang:
+        print(f"[*] OCR language: '{detected}' (auto-detected from the file names)")
+    args.ocr_lang = detected
 
     docs = load_file(
         doc_path,
