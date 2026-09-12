@@ -27,6 +27,8 @@ from typing import Any, Optional, Protocol
 
 import httpx
 
+from generation.prompts import estimate_tokens
+
 logger = logging.getLogger(__name__)
 
 # USD per 1M tokens (input, output). Local backends are free by construction.
@@ -53,6 +55,24 @@ DEFAULT_CONNECT_TIMEOUT = float(os.environ.get("LLM_CONNECT_TIMEOUT", "10"))
 # 8B). Keeping it resident is the difference between a 2-minute first token and
 # a 2-second one on later questions.
 DEFAULT_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "30m")
+# Starting context window for Ollama requests, grown on demand (see
+# OllamaBackend._options). 4096 fits the local preset's prompt with headroom.
+DEFAULT_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "4096"))
+MAX_NUM_CTX = 16384
+# Installed Ollama models to prefer, in order: small enough to answer in
+# seconds on a laptop CPU, large enough to follow the grounding rules.
+PREFERRED_OLLAMA_MODELS = ("qwen2.5:3b", "llama3.2:3b", "qwen2.5:1.5b", "llama3.2:1b", "llama3.1:8b")
+
+
+def preferred_ollama_order(names: list[str]) -> list[str]:
+    """Installed model names with the preferred ones first, the rest as given."""
+    def rank(name: str) -> int:
+        for position, prefix in enumerate(PREFERRED_OLLAMA_MODELS):
+            if name.startswith(prefix):
+                return position
+        return len(PREFERRED_OLLAMA_MODELS)
+
+    return sorted(names, key=rank)  # stable, so smallest-first order survives within a rank
 
 
 def _timeout(read: float) -> "httpx.Timeout":
@@ -171,6 +191,7 @@ class OllamaBackend:
                  timeout: float = DEFAULT_TIMEOUT,
                  keep_alive: str = DEFAULT_KEEP_ALIVE,
                  stream: bool = True,
+                 num_ctx: int = DEFAULT_NUM_CTX,
                  client: Optional[httpx.Client] = None):
         self.model = model
         self.url = url.rstrip("/")
@@ -182,20 +203,36 @@ class OllamaBackend:
         # box fails with nothing recovered. Streaming resets the clock on each
         # token, so the timeout means "stalled", not "slower than expected".
         self.stream = stream
+        # Context window requested from Ollama. Left unset, Ollama uses its
+        # small default and silently drops the *start* of a longer prompt: the
+        # grounding rules and the best evidence. It only ever grows (see
+        # `_options`), because a different num_ctx per request makes Ollama
+        # reload the whole model.
+        self.num_ctx = num_ctx
         self._client = client or httpx.Client(timeout=_timeout(timeout))
+
+    def _options(self, prompt_tokens: int, max_tokens: int, temperature: float) -> dict:
+        # 25% headroom: the token estimate is approximate, and running out of
+        # context truncates silently rather than failing.
+        needed = int((prompt_tokens + max_tokens) * 1.25) + 64
+        while needed > self.num_ctx and self.num_ctx < MAX_NUM_CTX:
+            self.num_ctx *= 2
+        return {"temperature": temperature, "num_predict": max_tokens, "num_ctx": self.num_ctx}
 
     def warmup(self) -> float:
         """Load the model now rather than inside the first question.
 
         Returns seconds taken. An empty prompt makes Ollama load the weights
-        and return immediately.
+        and return immediately. It is loaded with the context size requests
+        will use, or the first real request would reload it.
         """
         started = time.perf_counter()
         try:
             self._client.post(
                 f"{self.url}/api/chat",
                 json={"model": self.model, "messages": [], "stream": False,
-                      "keep_alive": self.keep_alive},
+                      "keep_alive": self.keep_alive,
+                      "options": {"num_ctx": self.num_ctx}},
             )
         except httpx.HTTPError as exc:
             logger.warning("Warm-up failed for %s: %s", self.model, exc)
@@ -207,10 +244,22 @@ class OllamaBackend:
         except Exception:
             return False
 
-    def list_models(self) -> list[str]:
+    def list_model_details(self) -> list[dict]:
+        """Installed models as {"name", "size"}, smallest first.
+
+        On a CPU, model size is the best predictor of answer latency, so the
+        smallest model is the sensible default and is listed first.
+        """
         response = self._client.get(f"{self.url}/api/tags", timeout=5.0)
         response.raise_for_status()
-        return [m["name"] for m in response.json().get("models", [])]
+        models = [
+            {"name": m["name"], "size": int(m.get("size") or 0)}
+            for m in response.json().get("models", [])
+        ]
+        return sorted(models, key=lambda m: (m["size"] or float("inf"), m["name"]))
+
+    def list_models(self) -> list[str]:
+        return [m["name"] for m in self.list_model_details()]
 
     def complete(self, prompt: str, *, system: Optional[str] = None,
                  max_tokens: int = 1024, temperature: float = 0.0,
@@ -218,6 +267,7 @@ class OllamaBackend:
         messages = ([{"role": "system", "content": system}] if system else []) + [
             {"role": "user", "content": prompt}
         ]
+        prompt_tokens = estimate_tokens(prompt) + (estimate_tokens(system) if system else 0)
         payload = {
             "model": self.model,
             "messages": messages,
@@ -225,7 +275,7 @@ class OllamaBackend:
             "keep_alive": self.keep_alive,
             # temperature 0 matters here: grounded answers must be reproducible
             # across eval runs, and local models default to 0.8.
-            "options": {"temperature": temperature, "num_predict": max_tokens},
+            "options": self._options(prompt_tokens, max_tokens, temperature),
         }
 
         started = time.perf_counter()
@@ -454,6 +504,54 @@ class StubBackend:
             output_tokens=len(text.split()),
             latency_s=0.0,
         )
+
+
+class FallbackBackend:
+    """A primary backend with a second one behind it.
+
+    Groq answers in about a second but depends on the network and a free-tier
+    rate limit; a local Ollama model is slow but always there. A transport
+    failure or HTTP error from the primary is answered by the fallback, and
+    `LLMResponse.backend` records which engine actually answered.
+    """
+
+    def __init__(self, primary: LLMBackend, fallback: LLMBackend):
+        self.primary = primary
+        self.fallback = fallback
+        self.name = primary.name
+        self.model = primary.model
+
+    def available(self) -> bool:
+        return self.primary.available() or self.fallback.available()
+
+    def warmup(self) -> float:
+        # Only the primary: loading the fallback's weights would spend RAM and
+        # seconds on an engine that is rarely needed.
+        warm = getattr(self.primary, "warmup", None)
+        return warm() if warm else 0.0
+
+    def complete(self, prompt: str, *, system: Optional[str] = None,
+                 max_tokens: int = 1024, temperature: float = 0.0,
+                 stream_callback: Optional[Any] = None) -> LLMResponse:
+        streamed: list[str] = []
+
+        def relay(token: str) -> None:
+            streamed.append(token)
+            stream_callback(token)
+
+        kwargs = {"system": system, "max_tokens": max_tokens, "temperature": temperature}
+        try:
+            return self.primary.complete(
+                prompt, stream_callback=relay if stream_callback else None, **kwargs
+            )
+        except (httpx.HTTPError, LLMTimeout) as exc:
+            if streamed:
+                # Part of the primary's answer is already on screen; splicing a
+                # different model's answer after it is worse than failing.
+                raise
+            logger.warning("%s failed (%s); answering with %s instead.",
+                           self.primary.name, exc, self.fallback.name)
+            return self.fallback.complete(prompt, stream_callback=stream_callback, **kwargs)
 
 
 BACKENDS = {

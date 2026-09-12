@@ -9,6 +9,7 @@ Two details here are easy to get wrong and both silently degrade recall:
    local similarity maths assume unit vectors.
 """
 
+import functools
 import logging
 from typing import Iterable, Optional
 
@@ -131,3 +132,13 @@ class Embedder:
 
     def embed_query(self, text: str) -> np.ndarray:
         return self.embed_queries([text])[0]
+
+
+@functools.lru_cache(maxsize=4)
+def get_embedder(model_name: str = DEFAULT_MODEL) -> Embedder:
+    """One Embedder per model for the whole process.
+
+    Loading the weights costs seconds (far more on a cold disk), and the API
+    used to build a fresh Embedder, and reload the model, on every index.
+    """
+    return Embedder(model_name)

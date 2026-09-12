@@ -11,6 +11,7 @@ reranker checkpoints, so `normalise=True` maps them through a sigmoid into
 the reranker is swapped for bge-reranker-base later (a Stretch item).
 """
 
+import functools
 import logging
 from typing import Optional, Sequence
 
@@ -21,6 +22,11 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 MULTILINGUAL_LIGHT = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 MULTILINGUAL_BASE = "BAAI/bge-reranker-base"
+
+# Query + passage tokens scored per pair. Attention cost grows with the square
+# of the length, so an uncapped 512-token pair costs ~1.8x a 384-token one on
+# CPU; child chunks are ~200 words, so 384 rarely truncates anything.
+DEFAULT_MAX_LENGTH = 384
 
 
 def _sigmoid(x: float) -> float:
@@ -43,12 +49,14 @@ class CrossEncoderReranker:
         batch_size: int = 32,
         normalise: bool = True,
         device: Optional[str] = None,
+        max_length: Optional[int] = DEFAULT_MAX_LENGTH,
         model=None,
     ):
         self.model_name = model_name
         self.batch_size = batch_size
         self.normalise = normalise
         self.device = device
+        self.max_length = max_length
         self._model = model
 
     @property
@@ -57,7 +65,8 @@ class CrossEncoderReranker:
             from sentence_transformers import CrossEncoder
 
             logger.info("Loading cross-encoder %s...", self.model_name)
-            self._model = CrossEncoder(self.model_name, device=self.device)
+            self._model = CrossEncoder(self.model_name, device=self.device,
+                                       max_length=self.max_length)
         return self._model
 
     def rerank(
@@ -97,3 +106,9 @@ class CrossEncoderReranker:
             )
             for rank, i in enumerate(order, 1)
         ]
+
+
+@functools.lru_cache(maxsize=4)
+def get_reranker(model_name: str = DEFAULT_MODEL) -> CrossEncoderReranker:
+    """One reranker per model for the whole process; loading weights costs seconds."""
+    return CrossEncoderReranker(model_name)
