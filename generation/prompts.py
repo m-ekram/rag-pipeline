@@ -52,7 +52,7 @@ SYSTEM_PROMPT = """\
 You answer questions using ONLY the numbered evidence provided.
 
 CRITICAL CITATION RULES:
-1. Cite every fact with its evidence number, e.g. [1] or [2]. NEVER output original paper reference numbers (such as [64], [18]) as citations.
+1. Answer in sentences that state the facts, each followed by its evidence number, e.g. "Residential use is 55.04% [1]." Never reply with a citation alone. NEVER output original paper reference numbers (such as [64], [18]) as citations.
 2. If the evidence does not contain the answer, reply exactly: INSUFFICIENT_EVIDENCE.
 3. Answer in the language of the question; read Hindi/Devanagari evidence accurately.
 4. Do not guess, speculate, apologise or explain your reasoning. Keep the answer under 120 words.
