@@ -410,9 +410,10 @@ def test_local_preset_shrinks_the_prompt():
     pipe = RAGPipeline.for_local_model(_FakeRetriever(CANDIDATES), ThresholdGate(0.5),
                                        llm=_FakeLLM("Claim [1]."))
     assert pipe.evidence_limit == LOCAL_PRESET["evidence_limit"] == 3
-    assert pipe.evidence_token_budget == LOCAL_PRESET["evidence_token_budget"] == 700
+    assert pipe.evidence_token_budget == LOCAL_PRESET["evidence_token_budget"] == 1200
     assert pipe.max_answer_tokens == 256
-    assert pipe.max_parent_tokens == 300
+    # Whole parent sections stay in: dropping them cost answers for ~7% latency.
+    assert pipe.max_parent_tokens is None
 
 
 def test_oversized_parents_are_not_swapped_in_for_their_child():

@@ -27,17 +27,17 @@ from retrieval.types import ScoredChunk
 logger = logging.getLogger(__name__)
 
 # Settings for a model running on CPU, where reading the prompt dominates.
-# Measured on an i5-8265U, qwen2.5:3b reads ~25-30 prompt tokens/s: a
-# 1,600-token prompt waited ~60 s for its first token. Ollama caches the
-# unchanged system prompt between questions, so the evidence is what each
-# question pays for; it is capped at ~700 tokens, and a matching paragraph is
-# not swapped for its whole 500-word section. The grounded-answer prompt caps
-# answers at 120 words, so 256 output tokens is already generous.
+# Measured on an i5-8265U, qwen2.5:3b reads ~29 prompt tokens/s. Ollama caches
+# the unchanged system prompt between questions, so the evidence is what each
+# question pays for. Capping evidence at 700 tokens without parent sections was
+# tried and rejected: the median prompt fell 30% but the median first token
+# only 7% (34 s -> 32 s), while three of five Master Plan questions lost their
+# answer (docs/dissertation/data, runs 200412 vs 203412). The grounded-answer
+# prompt caps answers at 120 words, so 256 output tokens is already generous.
 LOCAL_PRESET = {
     "evidence_limit": 3,
-    "evidence_token_budget": 700,
+    "evidence_token_budget": 1200,
     "max_answer_tokens": 256,
-    "max_parent_tokens": 300,
 }
 
 # Router intents whose answer is a list of every matching record. The normal
