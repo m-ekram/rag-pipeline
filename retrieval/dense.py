@@ -1,23 +1,19 @@
-"""Dense retrieval over Qdrant."""
+"""Dense retrieval over Qdrant, with a local fallback.
+
+`qdrant_client` is imported only where it is used. It pulls in grpc, whose
+compiled module Windows Application Control blocks on some machines, and a
+module-level import made the whole pipeline unimportable there.
+`make_dense_index` picks Qdrant when a server answers and the library loads,
+and the local NumPy index (`retrieval.local_dense`) otherwise.
+"""
+
+from __future__ import annotations
 
 import time
 import os
 import uuid
 import logging
-from typing import Iterable, Optional, Sequence
-
-from qdrant_client import QdrantClient
-from qdrant_client.models import (
-    Distance,
-    FieldCondition,
-    Filter,
-    MatchValue,
-    PointStruct,
-    ScalarQuantization,
-    ScalarQuantizationConfig,
-    ScalarType,
-    VectorParams,
-)
+from typing import Any, Iterable, Optional, Sequence
 
 from ingestion.documents import Chunk
 from .embedder import Embedder
@@ -50,14 +46,32 @@ class DenseIndex:
         embedder: Optional[Embedder] = None,
         *,
         url: str = DEFAULT_URL,
-        client: Optional[QdrantClient] = None,
+        client: Optional[Any] = None,
     ):
         self.collection_name = collection_name
         self.embedder = embedder or Embedder()
-        self.client = client or QdrantClient(url=url)
+        if client is None:
+            from qdrant_client import QdrantClient
+
+            client = QdrantClient(url=url)
+        self.client = client
+
+    def exists(self) -> bool:
+        return self.client.collection_exists(self.collection_name)
+
+    def count(self) -> int:
+        return self.client.count(self.collection_name).count
 
     def recreate(self) -> None:
         """Drop and recreate the collection, sized from the embedding model."""
+        from qdrant_client.models import (
+            Distance,
+            ScalarQuantization,
+            ScalarQuantizationConfig,
+            ScalarType,
+            VectorParams,
+        )
+
         if self.client.collection_exists(self.collection_name):
             self.client.delete_collection(self.collection_name)
             for _ in range(20):
@@ -110,6 +124,8 @@ class DenseIndex:
         show_progress: bool = False,
     ) -> int:
         """Embed and upsert chunks. Returns the number indexed."""
+        from qdrant_client.models import PointStruct
+
         batch: list[Chunk] = []
         total = 0
 
@@ -147,7 +163,7 @@ class DenseIndex:
         self,
         query: str,
         limit: int = 10,
-        filter: Optional[Filter] = None,
+        filter: Optional[Any] = None,
     ) -> list[ScoredChunk]:
         vector = self.embedder.embed_query(query).tolist()
         # `client.search()` was removed in qdrant-client 1.x; query_points is the
@@ -171,14 +187,16 @@ class DenseIndex:
             for rank, point in enumerate(response.points, 1)
         ]
 
-    def get_by_page(self, page_num: int, limit: int = 50) -> list[Chunk]:
-        """Fetch chunks matching a specific page number."""
-        page_filter = Filter(
-            must=[FieldCondition(key="page_num", match=MatchValue(value=page_num))]
-        )
+    def get_by_page(self, page_num: int, limit: int = 50, doc_id: Optional[str] = None) -> list[Chunk]:
+        """Fetch chunks matching a specific page number (and document, if given)."""
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        must = [FieldCondition(key="page_num", match=MatchValue(value=page_num))]
+        if doc_id is not None:
+            must.append(FieldCondition(key="doc_id", match=MatchValue(value=doc_id)))
         points, _ = self.client.scroll(
             collection_name=self.collection_name,
-            scroll_filter=page_filter,
+            scroll_filter=Filter(must=must),
             limit=limit,
             with_payload=True,
         )
@@ -195,3 +213,42 @@ def _chunk_from_payload(payload: Optional[dict]) -> Optional[Chunk]:
         return None
     fields = {f for f in Chunk.__dataclass_fields__}
     return Chunk(**{k: v for k, v in payload.items() if k in fields})
+
+
+# One client per URL for the whole process. `None` records that Qdrant was not
+# usable, so later indexes do not pay the probe again.
+_QDRANT_CLIENTS: dict[str, Any] = {}
+
+
+def _qdrant_client_for(url: str) -> Optional[Any]:
+    """A shared Qdrant client for `url`, or None when Qdrant is unusable here."""
+    if url not in _QDRANT_CLIENTS:
+        client = None
+        try:
+            from qdrant_client import QdrantClient
+
+            QdrantClient(url=url, timeout=2.0).get_collections()
+            client = QdrantClient(url=url)
+        except Exception as exc:  # blocked grpc import, server not running, ...
+            logger.info("Qdrant unavailable at %s (%s); using the local vector index.", url, exc)
+        _QDRANT_CLIENTS[url] = client
+    return _QDRANT_CLIENTS[url]
+
+
+def make_dense_index(collection_name: str, embedder: Optional[Embedder] = None, *,
+                     url: Optional[str] = None):
+    """Vector index for `collection_name`: a Qdrant server if usable, else local.
+
+    `RAG_VECTOR_STORE=local` or `=qdrant` forces the choice.
+    """
+    choice = os.environ.get("RAG_VECTOR_STORE", "auto").lower()
+    url = url or DEFAULT_URL
+    if choice != "local":
+        client = _qdrant_client_for(url)
+        if client is not None:
+            return DenseIndex(collection_name, embedder, client=client)
+        if choice == "qdrant":
+            raise RuntimeError(f"RAG_VECTOR_STORE=qdrant, but Qdrant is not usable at {url}")
+    from .local_dense import LocalDenseIndex
+
+    return LocalDenseIndex(collection_name, embedder)
