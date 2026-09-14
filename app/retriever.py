@@ -91,9 +91,16 @@ class RankFusionReranker(BaseDocumentCompressor):
 
 
 def build_sparse(chunks: list[Document]):
-    """BM25 over the chunk sidecar. Built once per process - at 40k chunks the
-    tokenise-and-count pass takes seconds, far too slow to redo per request.
-    Inverted-index implementation: see app/bm25.py for why not rank_bm25."""
+    """The lexical leg over the chunk sidecar: BM25 (default) or SPLADE.
+
+    Built once per process - at 40k chunks even BM25's tokenise-and-count pass
+    takes seconds, far too slow to redo per request. BM25 is an inverted index
+    (see app/bm25.py for why not rank_bm25); SPLADE is in app/splade.py.
+    """
+    if config.SPARSE == "splade":
+        from app.splade import SpladeRetriever
+
+        return SpladeRetriever.from_documents(chunks)
     return FastBM25Retriever.from_documents(chunks)
 
 

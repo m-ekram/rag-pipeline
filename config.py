@@ -128,6 +128,10 @@ RERANK_FETCH_K = _int("RERANK_FETCH_K", 30)
 # Order by reciprocal rank fusion of first-stage and re-ranker ranks, rather
 # than the re-ranker's order alone.
 RERANK_FUSION = _bool("RERANK_FUSION", True)
+# Lexical leg of hybrid retrieval: "bm25", or "splade" (learned sparse: weights
+# terms a passage implies but does not contain; costs a model pass per chunk).
+SPARSE = os.getenv("SPARSE", "bm25").strip().lower()
+SPARSE_MODEL = os.getenv("SPARSE_MODEL", "prithivida/Splade_PP_en_v1")
 
 # --- ingestion: embedding -----------------------------------------------------
 # Local embedding has no quota and no per-request overhead, so it wants big

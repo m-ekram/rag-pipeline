@@ -129,6 +129,46 @@ def test_rank_fusion_reranker_orders_by_fused_rank():
     assert [d.page_content for d in top] == ["a", "b"]
 
 
+def test_prompts_for_follows_model_cards():
+    from app.providers import prompts_for
+
+    assert prompts_for("BAAI/bge-small-en-v1.5") == (config.BGE_QUERY_PROMPT, "")
+    assert prompts_for("nomic-ai/nomic-embed-text-v1.5") == ("search_query: ", "search_document: ")
+    assert prompts_for("snowflake/snowflake-arctic-embed-m")[0].startswith("Represent this sentence")
+    assert prompts_for("sentence-transformers/all-MiniLM-L6-v2") == ("", "")
+
+
+def test_splade_scores_equal_brute_force_dot_product():
+    from app.splade import SpladeRetriever
+
+    rng = np.random.default_rng(1)
+    vocab = 300
+
+    def sparse(nnz):
+        idx = rng.choice(vocab, size=nnz, replace=False)
+        return idx.astype(np.int64), rng.random(nnz).astype(np.float32)
+
+    vectors = [sparse(rng.integers(5, 40)) for _ in range(50)]
+    docs = [Document(page_content=str(i), metadata={"i": i}) for i in range(50)]
+    query = sparse(12)
+
+    class FakeEncoder:
+        def encode_query(self, text):
+            return query
+
+    retriever = SpladeRetriever.from_vectors(docs, vectors, FakeEncoder(), k=5)
+
+    dense_q = np.zeros(vocab, dtype=np.float32)
+    dense_q[query[0]] = query[1]
+    expected = []
+    for idx, val in vectors:
+        d = np.zeros(vocab, dtype=np.float32)
+        d[idx] = val
+        expected.append(float(dense_q @ d))
+    np.testing.assert_allclose(retriever.scores("q"), expected, rtol=1e-5)
+    assert [d.metadata["i"] for d in retriever.invoke("q")] == list(np.argsort(expected)[::-1][:5])
+
+
 def test_maxsim_matches_brute_force():
     from app.providers import maxsim
 

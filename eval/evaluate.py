@@ -125,6 +125,7 @@ RETRIEVAL_ABLATIONS = {
     "hybrid+colbert": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _COLBERT, "rerank_fusion": False},
     "hybrid+colbert+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _COLBERT, "rerank_fusion": True},
     "hybrid+minilm+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _MINILM, "rerank_fusion": True},
+    "hybrid-splade": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "sparse": "splade"},
 }
 
 
@@ -278,6 +279,7 @@ def make_retriever(store, chunks: list[Document], cfg: dict, k: int):
         RERANK=cfg["rerank"],
         RERANK_MODEL=cfg.get("rerank_model", config.RERANK_MODEL),
         RERANK_FUSION=cfg.get("rerank_fusion", config.RERANK_FUSION),
+        SPARSE=cfg.get("sparse", config.SPARSE),
         HYBRID_WEIGHTS=cfg.get("weights", config.HYBRID_WEIGHTS),
     ):
         return build_retriever(store, chunks, k)

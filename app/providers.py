@@ -15,20 +15,38 @@ from langchain_core.embeddings import Embeddings
 import config
 
 
+def prompts_for(model: str) -> tuple[str, str]:
+    """(query prefix, document prefix) each model was trained with, per its model card.
+
+    Retrieval models are trained asymmetrically; embedding a query without its
+    instruction (or a passage without its marker) costs recall.
+    """
+    name = model.lower()
+    table = [
+        ("bge", (config.BGE_QUERY_PROMPT, "")),
+        ("snowflake-arctic-embed", ("Represent this sentence for searching relevant passages: ", "")),
+        ("mxbai-embed", ("Represent this sentence for searching relevant passages: ", "")),
+        ("nomic-embed-text", ("search_query: ", "search_document: ")),
+        ("e5", ("query: ", "passage: ")),
+    ]
+    return next((prompts for key, prompts in table if key in name), ("", ""))
+
+
 class FastEmbedEmbeddings(Embeddings):
     """Local embeddings on ONNX Runtime via fastembed - no PyTorch.
 
-    BGE v1.5 expects an instruction prefix on the query side only, so queries
-    and passages take different paths here rather than relying on the
+    Queries and passages take different paths so each model gets the prefixes
+    it was trained with (see `prompts_for`), rather than relying on the
     library's per-model defaults.
     """
 
-    def __init__(self, model: str, query_prompt: str = "", normalize: bool = True):
+    def __init__(self, model: str, query_prompt: str = "", normalize: bool = True, doc_prompt: str = ""):
         from fastembed import TextEmbedding
 
         self.model = model
         self._model = TextEmbedding(model_name=model, cache_dir=config.MODEL_CACHE_DIR)
         self._query_prompt = query_prompt
+        self._doc_prompt = doc_prompt
         self._normalize = normalize
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
@@ -38,7 +56,7 @@ class FastEmbedEmbeddings(Embeddings):
         return vectors.tolist()
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._encode(list(texts))
+        return self._encode([self._doc_prompt + t for t in texts])
 
     def embed_query(self, text: str) -> list[float]:
         return self._encode([self._query_prompt + text])[0]
@@ -121,8 +139,8 @@ def get_embeddings(provider: str | None = None, model: str | None = None):
     if provider == "local":
         # BGE models are trained for cosine similarity, so unit-norm vectors
         # are what FAISS's L2 distance should be comparing.
-        prompt = config.BGE_QUERY_PROMPT if "bge" in model.lower() else ""
-        return FastEmbedEmbeddings(model, query_prompt=prompt, normalize=config.EMBED_NORMALIZE)
+        query_prompt, doc_prompt = prompts_for(model)
+        return FastEmbedEmbeddings(model, query_prompt=query_prompt, doc_prompt=doc_prompt, normalize=config.EMBED_NORMALIZE)
 
     if provider == "openai":
         from langchain_openai import OpenAIEmbeddings
