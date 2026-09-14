@@ -45,8 +45,8 @@ class FastEmbedEmbeddings(Embeddings):
 
 
 class FastEmbedCrossEncoder(BaseCrossEncoder):
-    """Cross-encoder re-ranker on ONNX Runtime, pluggable into LangChain's
-    CrossEncoderReranker."""
+    """Cross-encoder re-ranker on ONNX Runtime: reads question and passage
+    together and emits one relevance score per pair."""
 
     def __init__(self, model: str):
         from fastembed.rerank.cross_encoder import TextCrossEncoder
@@ -56,6 +56,43 @@ class FastEmbedCrossEncoder(BaseCrossEncoder):
 
     def score(self, text_pairs: list[tuple[str, str]]) -> list[float]:
         return [float(s) for s in self._model.rerank_pairs(list(text_pairs))]
+
+
+def maxsim(query_tokens: np.ndarray, doc_tokens: np.ndarray) -> float:
+    """ColBERT relevance: each query token takes its best-matching passage
+    token; the scores are summed."""
+    return float((np.asarray(query_tokens) @ np.asarray(doc_tokens).T).max(axis=1).sum())
+
+
+class LateInteractionReranker(BaseCrossEncoder):
+    """ColBERT-style re-ranker on ONNX Runtime.
+
+    Question and passage are embedded separately, one vector per token, and
+    compared token by token (MaxSim). Finer-grained than a single-vector
+    embedding, and unlike a cross-encoder it scores exact token matches
+    directly rather than judging the passage as a whole.
+    """
+
+    def __init__(self, model: str):
+        from fastembed import LateInteractionTextEmbedding
+
+        self.model = model
+        self._model = LateInteractionTextEmbedding(model_name=model, cache_dir=config.MODEL_CACHE_DIR)
+
+    def score(self, text_pairs: list[tuple[str, str]]) -> list[float]:
+        pairs = list(text_pairs)
+        queries: dict[str, np.ndarray] = {}
+        for query, _ in pairs:
+            if query not in queries:
+                queries[query] = next(iter(self._model.query_embed(query)))
+        passages = self._model.embed([passage for _, passage in pairs], batch_size=32)
+        return [maxsim(queries[query], tokens) for (query, _), tokens in zip(pairs, passages)]
+
+
+def _is_late_interaction(model: str) -> bool:
+    from fastembed import LateInteractionTextEmbedding
+
+    return any(m["model"] == model for m in LateInteractionTextEmbedding.list_supported_models())
 
 
 def embedding_name(provider: str | None = None, model: str | None = None) -> tuple[str, str]:
@@ -99,8 +136,10 @@ def get_embeddings(provider: str | None = None, model: str | None = None):
 
 @functools.lru_cache(maxsize=2)
 def get_cross_encoder(model: str | None = None):
-    """Loaded once per process: a cross-encoder is hundreds of MB of weights."""
-    return FastEmbedCrossEncoder(model or config.RERANK_MODEL)
+    """Loaded once per process: a re-ranker is hundreds of MB of weights.
+    ColBERT-family models get MaxSim scoring; the rest are cross-encoders."""
+    model = model or config.RERANK_MODEL
+    return LateInteractionReranker(model) if _is_late_interaction(model) else FastEmbedCrossEncoder(model)
 
 
 @functools.lru_cache(maxsize=1)

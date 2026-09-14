@@ -95,6 +95,49 @@ def test_path_clean_drops_headings_shared_across_documents(monkeypatch):
     assert any(c.metadata.get("section") == "Page 0 > Recap" for c in chunks)  # citation keeps it
 
 
+class _ScoreByText:
+    """Stand-in cross-encoder: fixed score per passage text."""
+
+    def __init__(self, scores: dict[str, float]):
+        self.scores = scores
+
+    def score(self, pairs):
+        return [self.scores[passage] for _, passage in pairs]
+
+
+def test_rank_fusion_reranker_orders_by_fused_rank():
+    from app.retriever import RankFusionReranker
+
+    # First stage: a, b, c, d. Re-ranker strongly prefers d, then c.
+    docs = [Document(page_content=t) for t in "abcd"]
+    model = _ScoreByText({"a": 0.1, "b": 0.2, "c": 0.9, "d": 1.0})
+
+    plain = RankFusionReranker(model=model, top_n=4, fuse=False).compress_documents(docs, "q")
+    assert [d.page_content for d in plain] == ["d", "c", "b", "a"]
+
+    fused = RankFusionReranker(model=model, top_n=4, fuse=True).compress_documents(docs, "q")
+    # a = d = 1/61 + 1/64 (0.03202) > b = c = 1/62 + 1/63 (0.03200); ties keep
+    # first-stage order.
+    assert [d.page_content for d in fused] == ["a", "d", "b", "c"]
+
+    # A candidate the re-ranker loves but the first stage ranked last does not
+    # displace ones both rankings put near the top:
+    # a = 1/61 + 1/63, b = 1/62 + 1/62, e = 1/65 + 1/61.
+    docs5 = [Document(page_content=t) for t in "abcde"]
+    model5 = _ScoreByText({"a": 0.5, "b": 0.8, "c": 0.1, "d": 0.2, "e": 1.0})
+    top = RankFusionReranker(model=model5, top_n=2, fuse=True).compress_documents(docs5, "q")
+    assert [d.page_content for d in top] == ["a", "b"]
+
+
+def test_maxsim_matches_brute_force():
+    from app.providers import maxsim
+
+    rng = np.random.default_rng(0)
+    q, d = rng.normal(size=(7, 16)), rng.normal(size=(23, 16))
+    expected = sum(max(float(qi @ dj) for dj in d) for qi in q)
+    assert maxsim(q, d) == pytest.approx(expected)
+
+
 def test_fast_bm25_matches_rank_bm25():
     import random
 

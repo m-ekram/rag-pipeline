@@ -58,7 +58,7 @@ import config
 from app.chunking import naive_split, stats, structured_split
 from app.loaders import load_directory
 from app.providers import embedding_name, get_embeddings
-from app.retriever import build_retriever, dense_only_retriever
+from app.retriever import build_retriever, build_sparse, dense_only_retriever
 from app.store import build_index
 
 QUESTIONS_FILE = Path(__file__).parent / "questions.yaml"
@@ -70,6 +70,9 @@ RESULTS_DIR = Path(__file__).parent / "results"
 CONFIGS = {
     "baseline": {
         "label": "fixed-width chunks, no overlap, no headers, dense-only top-k",
+        # Pinned to the original pipeline's embedding model, so changing the
+        # tuned embedding can never silently move the "from" figure.
+        "embed": "local:BAAI/bge-small-en-v1.5",
         "splitter": "naive",
         "chunk_size": 1000,
         "chunk_overlap": 0,
@@ -103,6 +106,10 @@ CHUNK_ABLATIONS = {
     "headers:path-clean": {"header_mode": "path-clean"},
 }
 
+_BGE_RERANK = "BAAI/bge-reranker-base"
+_COLBERT = "answerdotai/answerai-colbert-small-v1"
+_MINILM = "Xenova/ms-marco-MiniLM-L-6-v2"
+
 # Retrieval ablations. All share the tuned chunk set, so the embedding cost is
 # paid once and each variant differs only in how candidates are ranked. This is
 # what separates "hybrid helps" from "we changed five things and it moved".
@@ -112,8 +119,12 @@ RETRIEVAL_ABLATIONS = {
     "hybrid": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False},
     "hybrid+mmr(0.5)": {"hybrid": True, "mmr_lambda": 0.5, "rerank": False},
     "sparse-heavy": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "weights": (0.4, 0.6)},
-    "dense+rerank": {"hybrid": False, "mmr_lambda": 1.0, "rerank": True},
-    "hybrid+rerank": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True},
+    "dense+rerank": {"hybrid": False, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _BGE_RERANK, "rerank_fusion": False},
+    "hybrid+rerank": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _BGE_RERANK, "rerank_fusion": False},
+    "hybrid+rerank+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _BGE_RERANK, "rerank_fusion": True},
+    "hybrid+colbert": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _COLBERT, "rerank_fusion": False},
+    "hybrid+colbert+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _COLBERT, "rerank_fusion": True},
+    "hybrid+minilm+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _MINILM, "rerank_fusion": True},
 }
 
 
@@ -265,9 +276,35 @@ def make_retriever(store, chunks: list[Document], cfg: dict, k: int):
         USE_HYBRID=cfg["hybrid"],
         MMR_LAMBDA=1.0 if cfg["mmr_lambda"] is None else cfg["mmr_lambda"],
         RERANK=cfg["rerank"],
+        RERANK_MODEL=cfg.get("rerank_model", config.RERANK_MODEL),
+        RERANK_FUSION=cfg.get("rerank_fusion", config.RERANK_FUSION),
         HYBRID_WEIGHTS=cfg.get("weights", config.HYBRID_WEIGHTS),
     ):
         return build_retriever(store, chunks, k)
+
+
+def depth_report(store, chunks: list[Document], cfg: dict, result: dict, questions: list[dict], depth: int) -> None:
+    """For every miss: where does the first relevant chunk sit in each leg's top `depth`?
+
+    A miss at rank 9 is a ranking problem a re-ranker can fix; a miss at rank 0
+    (absent from the top `depth` everywhere) is a recall problem no re-ranker
+    can reach.
+    """
+    misses = [q for q, d in zip(questions, result["detail"]) if not d["hit"]]
+    if not misses:
+        return
+    legs = {"dense": dense_only_retriever(store, depth)}
+    if cfg["hybrid"]:
+        legs["bm25"] = build_sparse(chunks).model_copy(update={"k": depth})
+    legs["pipeline"] = make_retriever(store, chunks, dict(cfg, rerank=False), depth)
+    print(f"\n    first relevant rank within top {depth} (0 = absent):")
+    print("    " + "".join(f"{name:>10}" for name in legs) + "   question")
+    for q in misses:
+        ranks = []
+        for leg in legs.values():
+            got = leg.invoke(q["question"])[:depth]
+            ranks.append(next((i for i, d in enumerate(got, 1) if is_relevant(d, q)), 0))
+        print("    " + "".join(f"{r:>10}" for r in ranks) + f"   {q['question'][:60]}")
 
 
 def score(retriever, questions: list[dict], k: int, verbose: bool = False) -> dict:
@@ -338,7 +375,7 @@ def _summary_line(r: dict) -> str:
     )
 
 
-def run_config(name: str, cfg: dict, docs, questions, k: int, embed: tuple[str, str]) -> dict:
+def run_config(name: str, cfg: dict, docs, questions, k: int, embed: tuple[str, str], depth: int = 0) -> dict:
     embed = embedding_name(*cfg["embed"].split(":", 1)) if cfg.get("embed") else embed
     print(f"\n=== {name}: {cfg['label']} [{embed[0]}:{embed[1]}] ===")
 
@@ -349,24 +386,34 @@ def run_config(name: str, cfg: dict, docs, questions, k: int, embed: tuple[str, 
     result = score(make_retriever(store, chunks, cfg, k), questions, k, verbose=True)
     result = {"config": name, "label": cfg["label"], "embedding": f"{embed[0]}:{embed[1]}", "chunks": s["count"], **result}
     print(f"    -> {_summary_line(result)}")
+    if depth:
+        depth_report(store, chunks, cfg, result, questions, depth)
     return result
 
 
-def run_ablations(docs, questions, k: int, embed: tuple[str, str]) -> list[dict]:
+def run_ablations(docs, questions, k: int, embed: tuple[str, str], only: set[str] | None = None) -> list[dict]:
+    """`only` restricts the run to the named variants (all when None)."""
     results = []
     tuned = CONFIGS["tuned"]
+    wanted = lambda name: only is None or name in only  # noqa: E731
 
-    print("\nChunking variants (each re-embedded; shipping retriever):")
+    if any(wanted(n) for n in CHUNK_ABLATIONS):
+        print("\nChunking variants (each re-embedded; shipping retriever):")
     for name, spec in CHUNK_ABLATIONS.items():
+        if not wanted(name):
+            continue
         cfg = dict(tuned, **spec)
         chunks = build_chunks(docs, cfg)
         store = embed_index(chunks, embed)
         results.append(_ablation_row(name, spec, chunks, score(make_retriever(store, chunks, cfg, k), questions, k)))
 
+    retrieval = {n: s for n, s in RETRIEVAL_ABLATIONS.items() if wanted(n)}
+    if not retrieval:
+        return results
     chunks = build_chunks(docs, tuned)
     print(f"\nRetrieval variants (shared index: {len(chunks)} tuned chunks, embedded once):")
     store = embed_index(chunks, embed)
-    for name, spec in RETRIEVAL_ABLATIONS.items():
+    for name, spec in retrieval.items():
         cfg = dict(tuned, **spec)
         results.append(_ablation_row(name, spec, chunks, score(make_retriever(store, chunks, cfg, k), questions, k)))
     for r in results:
@@ -494,7 +541,14 @@ def main(argv: list[str] | None = None) -> int:
         help="check every question is reachable in the corpus, then exit (no embedding)",
     )
     parser.add_argument("--strict", action="store_true", help="with --validate: lint issues also fail")
+    parser.add_argument("--only", help="with --ablate: comma-separated variant names to run")
+    parser.add_argument("--depth", type=int, default=0, help="for misses, show first relevant rank in each leg's top N")
     args = parser.parse_args(argv)
+    only = {name.strip() for name in args.only.split(",")} if args.only else None
+    if only:
+        unknown = only - set(CHUNK_ABLATIONS) - set(RETRIEVAL_ABLATIONS)
+        if unknown:
+            parser.error(f"unknown variant(s) {sorted(unknown)}; have {sorted(CHUNK_ABLATIONS) + sorted(RETRIEVAL_ABLATIONS)}")
 
     if args.diff:
         return diff(*args.diff)
@@ -512,7 +566,7 @@ def main(argv: list[str] | None = None) -> int:
     meta = provenance(args.k, embed, args.data_dir, args.questions)
 
     if args.ablate:
-        results = run_ablations(docs, questions, args.k, embed)
+        results = run_ablations(docs, questions, args.k, embed, only)
         if args.save:
             save("ablate", split, results, meta)
         return 0
@@ -521,11 +575,13 @@ def main(argv: list[str] | None = None) -> int:
         results = []
         for size, overlap in [(500, 75), (800, 120), (1000, 150), (1500, 225)]:
             cfg = dict(CONFIGS["tuned"], chunk_size=size, chunk_overlap=overlap, label=f"tuned, chunk={size}/{overlap}")
-            results.append(run_config(f"cs{size}", cfg, docs, questions, args.k, embed))
+            results.append(run_config(f"cs{size}", cfg, docs, questions, args.k, embed, args.depth))
     elif args.config:
-        results = [run_config(args.config, CONFIGS[args.config], docs, questions, args.k, embed)]
+        results = [run_config(args.config, CONFIGS[args.config], docs, questions, args.k, embed, args.depth)]
     else:
-        results = [run_config(name, CONFIGS[name], docs, questions, args.k, embed) for name in ("baseline", "tuned")]
+        results = [
+            run_config(name, CONFIGS[name], docs, questions, args.k, embed, args.depth) for name in ("baseline", "tuned")
+        ]
 
     print_comparison(results, args.k)
     if args.save:

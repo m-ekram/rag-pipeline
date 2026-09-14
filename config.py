@@ -125,6 +125,9 @@ HYBRID_WEIGHTS = (
 RERANK = _bool("RERANK", False)
 RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base")
 RERANK_FETCH_K = _int("RERANK_FETCH_K", 30)
+# Order by reciprocal rank fusion of first-stage and re-ranker ranks, rather
+# than the re-ranker's order alone.
+RERANK_FUSION = _bool("RERANK_FUSION", True)
 
 # --- ingestion: embedding -----------------------------------------------------
 # Local embedding has no quota and no per-request overhead, so it wants big

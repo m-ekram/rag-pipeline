@@ -8,18 +8,24 @@ MMR sits on the dense leg: it pulls FETCH_K candidates and picks ones that are
 relevant *and* mutually dissimilar. On the FastAPI corpus that hurt (see
 config.MMR_LAMBDA), so lambda defaults to 1.0 - plain relevance.
 
-Optional second stage (RERANK=true): a cross-encoder reads each (question,
-passage) pair jointly and re-scores the first stage's RERANK_FETCH_K
-candidates, keeping TOP_K. Bi-encoder retrieval compares two independently
-computed vectors; a cross-encoder sees both texts at once, which is what
-recovers paraphrased questions whose wording shares little with the source.
+Optional second stage (RERANK=true): a re-ranker (cross-encoder, or ColBERT
+late interaction) re-scores the first stage's RERANK_FETCH_K candidates and
+TOP_K are kept. With RERANK_FUSION (default) the final order is reciprocal
+rank fusion of the first-stage rank and the re-ranker's rank instead of the
+re-ranker's order alone. Measured on the FastAPI corpus, a re-ranker used
+alone recovered a question the first stage missed but lost four others by
+promoting overview and "Recap" chunks; fusing the two rankings keeps a
+re-ranker's strong opinions while letting the first stage veto its odd ones.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any, Sequence
 
-from langchain_core.documents import Document
+from langchain_core.callbacks import Callbacks
+from langchain_core.documents import BaseDocumentCompressor, Document
+from pydantic import ConfigDict
 
 import config
 from app.bm25 import FastBM25Retriever
@@ -45,6 +51,43 @@ def _legacy(name: str):
     # Failing loudly matters: a silent fallback to dense-only would make an
     # eval run report "hybrid" numbers for a retriever that never ran BM25.
     raise SystemExit(f"{name} is not importable. Install it with:  pip install langchain-classic")
+
+
+RRF_K = 60  # the constant EnsembleRetriever uses; not a tuning knob here
+
+
+class RankFusionReranker(BaseDocumentCompressor):
+    """Re-rank candidates, optionally fusing with their first-stage order.
+
+    `documents` arrive in first-stage order. fuse=False keeps the re-ranker's
+    order alone (what LangChain's CrossEncoderReranker does); fuse=True scores
+    each candidate 1/(k + first-stage rank) + 1/(k + re-ranker rank).
+    """
+
+    model: Any
+    top_n: int = 5
+    fuse: bool = True
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def compress_documents(
+        self, documents: Sequence[Document], query: str, callbacks: Callbacks | None = None
+    ) -> Sequence[Document]:
+        docs = list(documents)
+        if not docs:
+            return []
+        scores = self.model.score([(query, d.page_content) for d in docs])
+        by_score = sorted(range(len(docs)), key=lambda i: scores[i], reverse=True)
+        if not self.fuse:
+            return [docs[i] for i in by_score[: self.top_n]]
+        rerank_rank = {i: r for r, i in enumerate(by_score, start=1)}
+        # Ties go to the earlier first-stage position.
+        fused = sorted(
+            range(len(docs)),
+            key=lambda i: (1 / (RRF_K + i + 1) + 1 / (RRF_K + rerank_rank[i]), -i),
+            reverse=True,
+        )
+        return [docs[i] for i in fused[: self.top_n]]
 
 
 def build_sparse(chunks: list[Document]):
@@ -77,7 +120,7 @@ def build_retriever(store, chunks: list[Document] | None = None, top_k: int | No
     if not config.RERANK:
         return retriever
 
-    reranker = _legacy("CrossEncoderReranker")(model=get_cross_encoder(config.RERANK_MODEL), top_n=k)
+    reranker = RankFusionReranker(model=get_cross_encoder(config.RERANK_MODEL), top_n=k, fuse=config.RERANK_FUSION)
     return _legacy("ContextualCompressionRetriever")(base_compressor=reranker, base_retriever=retriever)
 
 
