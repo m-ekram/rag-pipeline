@@ -1,0 +1,83 @@
+{
+  "label": "after",
+  "git": {
+    "commit": "3e6b116e05b37fb8f68490d05fa3ac362b3f1250",
+    "dirty": false
+  },
+  "machine": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "python": "3.11.9",
+    "cpus": 8,
+    "ram_gb": 17.1
+  },
+  "params": {
+    "pages": 12000,
+    "pages_per_file": 500,
+    "chars_per_page": 3000,
+    "queries": 200,
+    "seed": 7,
+    "no_pdf": false,
+    "embedding": "fake",
+    "rerank": false,
+    "sparse": "bm25",
+    "workers": null,
+    "label": "after",
+    "no_save": false
+  },
+  "corpus": {
+    "format": "pdf",
+    "pdf_pages": 12000,
+    "files": 24
+  },
+  "chunks": 44517,
+  "faiss_vectors": 44517,
+  "index_on_disk_mb": 361.6,
+  "ingest_seconds": 75.6,
+  "stages": {
+    "load": {
+      "seconds": 54.49,
+      "peak_rss_mb": 988.8,
+      "rss_after_mb": 470.6
+    },
+    "chunk": {
+      "seconds": 2.07,
+      "peak_rss_mb": 656.8,
+      "rss_after_mb": 583.9
+    },
+    "embed+index": {
+      "seconds": 17.73,
+      "peak_rss_mb": 912.0,
+      "rss_after_mb": 894.2
+    },
+    "save": {
+      "seconds": 1.31,
+      "peak_rss_mb": 902.5,
+      "rss_after_mb": 894.5
+    },
+    "load_index": {
+      "seconds": 0.56,
+      "peak_rss_mb": 866.1,
+      "rss_after_mb": 877.2
+    },
+    "build_retriever": {
+      "seconds": 4.58,
+      "peak_rss_mb": 1091.8,
+      "rss_after_mb": 1038.3
+    },
+    "queries": {
+      "seconds": 16.02,
+      "peak_rss_mb": 1051.0,
+      "rss_after_mb": 1050.9
+    }
+  },
+  "peak_rss_mb": 1091.8,
+  "baseline_rss_mb": 422.5,
+  "serving_rss_mb": 1050.9,
+  "query_latency_ms": {
+    "p50": 79.9,
+    "p95": 89.9,
+    "max": 125.4,
+    "mean": 80.1,
+    "n": 200
+  }
+}

@@ -1,0 +1,3574 @@
+{
+  "meta": {
+    "git_commit": "3e6b116e05b37fb8f68490d05fa3ac362b3f1250",
+    "git_dirty": false,
+    "questions_file": "questions_heldout.yaml",
+    "questions_sha1": "96a8e40c88f0404026a90831d5fecc96d17d36b3",
+    "embedding": "local:snowflake/snowflake-arctic-embed-m",
+    "k": 5,
+    "data_dir": "data",
+    "config": "chat=openai:gpt-4o-mini embed=local:snowflake/snowflake-arctic-embed-m chunk=1000/150 header=path-clean top_k=5 hybrid=True rerank=off",
+    "python": "3.11.9",
+    "timestamp": "2026-09-14T15:49:49"
+  },
+  "results": [
+    {
+      "config": "baseline",
+      "label": "fixed-width chunks, no overlap, no headers, dense-only top-k",
+      "embedding": "local:BAAI/bge-small-en-v1.5",
+      "chunks": 1081,
+      "k": 5,
+      "questions": 50,
+      "hits": 41,
+      "hit_rate": 0.82,
+      "hit_rate_ci95": [
+        0.692,
+        0.9023
+      ],
+      "hit@1": 0.66,
+      "hit@3": 0.74,
+      "mrr": 0.7113333333333334,
+      "precision": 0.32,
+      "latency_ms": {
+        "mean": 21.7,
+        "p95": 37.4
+      },
+      "by_tag": {
+        "exact": "17/17",
+        "multihop": "15/16",
+        "paraphrase": "9/17"
+      },
+      "detail": [
+        {
+          "question": "How do I make the browser pop up a username and password prompt before someone can call my endpoint?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 4,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Why does my docs page show two different versions of the same model, one for requests and one for responses?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use openapi_examples to show several request examples in the docs?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How can I skip the automatic serialization and hand back my own fully built reply object from an endpoint?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 3,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/reference__responses.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-directly.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__classes-as-dependencies.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "What is the smallest possible app I can write, and how do I start the development server for it?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I add custom key-value metadata to the HTTP reply my endpoint sends?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-directly.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "I built a React app with Vite. How do I serve its build folder from my API so client-side routes still load the index page?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Can I expose a query-language style API where clients pick exactly which fields they want, alongside my normal endpoints?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__path-params-numeric-validations.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-fields.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "My old project uses the previous major version of the validation library. How do I upgrade it step by step?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__migrate-from-pydantic-v1-to-pydantic-v2.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__versions.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/features.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__path-params-numeric-validations.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I write a custom APIRoute class to decompress gzip request bodies?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What is FastAPI Cloud?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 5,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__fastapicloud.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__fastapicloud.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__cloud.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How can I set breakpoints in VS Code or PyCharm and step through my running API?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__debugging.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__debugging.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__debugging.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use get_openapi to modify the generated OpenAPI schema?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__path-operation-advanced-configuration.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I measure how long each request takes and send that time back in a response header?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__middleware.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__header-params.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-headers.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use exclude_unset for partial updates with PATCH?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__settings.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I read a value with Cookie in a path operation?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__cookie-params.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-params.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/reference__parameters.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Can the thing I inject into endpoints be an object type instead of a function, so my editor autocompletes its attributes?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-fields.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/alternatives.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/python-types.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "After upgrading FastAPI my clients break because failed logins now get 401 instead of 403. How do I get the old behavior back?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__authentication-error-status-code.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I declare a group of cookies as one Pydantic model with Cookie?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__header-param-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-form-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "Where do the docs point me for common tasks like hiding extra data, tagging endpoints, and changing the docs URL?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__general.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__general.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Which ASGI server runs underneath my app in production, and are there alternatives to it?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__middleware.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I use uv to create a project with its own virtual environment?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/virtual-environments.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I document that my endpoint can also return a 404 with its own error model, so it shows up in the docs?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How can I group several related request headers into one reusable typed object with validation?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__header-param-models.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__path-params-numeric-validations.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__header-params.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__using-request-directly.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use generate_unique_id_function to get nicer method names in a generated TypeScript client?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 5,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I force every plain http request to be redirected to the secure version of my site?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__middleware.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cors.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Why does FastAPI reject JSON requests that have no Content-Type header?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__strict-content-type.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__strict-content-type.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/alternatives.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__path-operation-advanced-configuration.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use val_json_bytes to accept base64 data inside JSON?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I pass dependencies to the path operation decorator when I don't need their return value?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__bigger-applications.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__global-dependencies.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I make my endpoint expect the item nested under its own key in the JSON body, even when it is the only body parameter?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-nested-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Can I use UUID and datetime.timedelta as parameter types?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I render HTML pages with Jinja2 that link to my CSS files?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__templating.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What do I need to install and import to accept form fields instead of a JSON body?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use WSGIMiddleware to mount a Flask app?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__wsgi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__wsgi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-docs-ui-assets.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__sub-applications.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I give tokens fine-grained permissions, so a user can read items but not change their own profile?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "My tests need the app's startup logic, like opening a database pool, to run. How do I trigger it from the test client?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__testing-events.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Should I lock the framework to one specific release in my project, given that it can still ship breaking changes?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I set status_code on a Response parameter so I return 201 only when the data was created?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__response-status-code.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-status-codes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-status-code.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I turn off syntax highlighting or change the color theme of the interactive docs page?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__configure-swagger-ui.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__server-workers.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I set a cookie on the client while still returning a normal dict filtered by my response model?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-headers.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I write a test that connects to my real-time socket endpoint and checks the message it sends?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__testing-websockets.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/reference__testclient.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How can I hide the API documentation in production using an environment setting?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__settings.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I add dependencies to the whole FastAPI application?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__dependencies__global-dependencies.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__sub-dependencies.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I make one reusable injectable whose behavior is configured by arguments I pass when creating it?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 4,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__dependencies__index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__classes-as-dependencies.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__index.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__advanced-dependencies.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__security__index.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I hide one endpoint from the generated API docs while keeping it working?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__openapi-callbacks.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I reject a form submission that includes unexpected extra fields?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-form-models.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-form-models.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I send a large binary file to the client in pieces without loading it all into memory?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 3,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-forms-and-files.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": null,
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I get the client's IP address inside an endpoint?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__using-request-directly.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I document webhooks with app.webhooks?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": null,
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I build a login endpoint that checks the submitted credentials and hands back an access token?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": null,
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": null,
+              "relevant": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "config": "tuned",
+      "label": "structure-aware chunks + overlap + 'path-clean' headers, hybrid SPLADE/dense",
+      "embedding": "local:snowflake/snowflake-arctic-embed-m",
+      "chunks": 1533,
+      "k": 5,
+      "questions": 50,
+      "hits": 39,
+      "hit_rate": 0.78,
+      "hit_rate_ci95": [
+        0.6476,
+        0.8725
+      ],
+      "hit@1": 0.52,
+      "hit@3": 0.74,
+      "mrr": 0.6323333333333333,
+      "precision": 0.376,
+      "latency_ms": {
+        "mean": 171.0,
+        "p95": 274.1
+      },
+      "by_tag": {
+        "exact": "17/17",
+        "multihop": "16/16",
+        "paraphrase": "6/17"
+      },
+      "detail": [
+        {
+          "question": "How do I make the browser pop up a username and password prompt before someone can call my endpoint?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > The `password` flow",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": "HTTP Basic Auth > Check the username > Return the error",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > Check it",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > The `password` flow",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Why does my docs page show two different versions of the same model, one for requests and one for responses?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > See it in the docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Return Type and Data Filtering > Type Annotations and Tooling",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > `response_model` Parameter > `response_model` Priority",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Return Type and Data Filtering",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Return the same input data",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use openapi_examples to show several request examples in the docs?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": "Declare Request Example Data > `examples` in JSON Schema - OpenAPI > `Body` with multiple `examples`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": "Declare Request Example Data > Technical Details > Swagger UI and OpenAPI-specific `examples`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": "Declare Request Example Data > `examples` in JSON Schema - OpenAPI > OpenAPI-specific `examples`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": "Declare Request Example Data > `examples` in JSON Schema - OpenAPI > Using the `openapi_examples` Parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__schema-extra-example.md",
+              "section": "Declare Request Example Data > `examples` in JSON Schema - OpenAPI > Example in the docs UI",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How can I skip the automatic serialization and hand back my own fully built reply object from an endpoint?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__response-directly.md",
+              "section": "Return a Response Directly > Notes",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Other Return Type Annotations > Disable Response Model",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Other Return Type Annotations > Disable Response Model",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Add an output model",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Response Model encoding parameters",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "What is the smallest possible app I can write, and how do I start the development server for it?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": "Run a Server Manually > Deployment Concepts",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__index.md",
+              "section": "Deployment > Deployment Strategies",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__bigger-applications.md",
+              "section": "Bigger Applications - Multiple Files",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__fastapicloud.md",
+              "section": "FastAPI Cloud > Deploy your own server",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I add custom key-value metadata to the HTTP reply my endpoint sends?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": "Additional Responses in OpenAPI > Combine predefined responses and custom ones",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": "Additional Responses in OpenAPI > Combine predefined responses and custom ones",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for API",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": "Custom Response - HTML, Stream, File, others > Custom response class",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for tags > Create metadata for tags",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "I built a React app with Vite. How do I serve its build folder from my API so client-side routes still load the index page?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Client-Side Routing",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Serve a Frontend",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Static Build Output Only",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Client-Side Routing",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "Can I expose a query-language style API where clients pick exactly which fields they want, alongside my normal endpoints?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": "Query Parameter Models > Summary",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Declare more metadata",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": "Query Parameter Models",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/features.md",
+              "section": "Features > FastAPI features",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/history-design-future.md",
+              "section": "History, Design and Future > Investigation",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "My old project uses the previous major version of the validation library. How do I upgrade it step by step?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 3,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__migrate-from-pydantic-v1-to-pydantic-v2.md",
+              "section": "Migrate from Pydantic v1 to Pydantic v2 > Official Guide",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__versions.md",
+              "section": "About FastAPI versions > Upgrading the FastAPI versions",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__migrate-from-pydantic-v1-to-pydantic-v2.md",
+              "section": "Migrate from Pydantic v1 to Pydantic v2 > `bump-pydantic`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__migrate-from-pydantic-v1-to-pydantic-v2.md",
+              "section": "Migrate from Pydantic v1 to Pydantic v2 > Pydantic v1 in v2",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__versions.md",
+              "section": "About FastAPI versions > Pin your `fastapi` version",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I write a custom APIRoute class to decompress gzip request bodies?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Handling custom request body encodings",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Handling custom request body encodings > Create a custom `GzipRequest` class",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Handling custom request body encodings > Create a custom `GzipRoute` class",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Handling custom request body encodings > Create a custom `GzipRoute` class",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Handling custom request body encodings > Create a custom `GzipRequest` class",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What is FastAPI Cloud?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 4,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__fastapicloud.md",
+              "section": "FastAPI Cloud > About FastAPI Cloud",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/help-fastapi.md",
+              "section": "Help > Try FastAPI Cloud",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": "FastAPI > Example upgrade > Deploy your app (optional) > About FastAPI Cloud",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__cloud.md",
+              "section": "Deploy FastAPI on Cloud Providers",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps > Recap, step by step > Step 6: Deploy it",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How can I set breakpoints in VS Code or PyCharm and step through my running API?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__debugging.md",
+              "section": "Debugging > Run your code with your debugger",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__debugging.md",
+              "section": "Debugging",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/editor-support.md",
+              "section": "Editor Support > Features",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": "Tutorial - User Guide",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use get_openapi to modify the generated OpenAPI schema?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": "Extending OpenAPI > Overriding the defaults > Generate the OpenAPI schema",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": "Extending OpenAPI > Overriding the defaults > Cache the OpenAPI schema",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": "Extending OpenAPI > Overriding the defaults",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": "Extending OpenAPI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__general.md",
+              "section": "General - How To - Recipes > OpenAPI Metadata - Docs",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I measure how long each request takes and send that time back in a response header?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Custom `APIRoute` class in a router",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__middleware.md",
+              "section": "Middleware > Create a middleware > Before and after the `response`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-request-and-route.md",
+              "section": "Custom Request and APIRoute class > Custom `APIRoute` class in a router",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__middleware.md",
+              "section": "Middleware > Create a middleware",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": "Extra Data Types > Other data types",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use exclude_unset for partial updates with PATCH?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": "Body - Updates > Partial updates with `PATCH` > Using Pydantic's `exclude_unset` parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": "Body - Updates > Partial updates with `PATCH` > Partial updates recap",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": "Body - Updates > Partial updates with `PATCH` > Using Pydantic's `exclude_unset` parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": "Body - Updates > Partial updates with `PATCH`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": "Body - Updates > Partial updates with `PATCH` > Partial updates recap",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I read a value with Cookie in a path operation?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": "Response Cookies > Use a `Response` parameter",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cookie-params.md",
+              "section": "Cookie Parameters > Declare `Cookie` parameters",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-params.md",
+              "section": "Cookie Parameters",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-params.md",
+              "section": "Cookie Parameters > Recap",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__path-operation-configuration.md",
+              "section": "Path Operation Configuration",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Can the thing I inject into endpoints be an object type instead of a function, so my editor autocompletes its attributes?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/python-types.md",
+              "section": "Python Types Intro > Motivation > Edit it",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": "FastAPI > Example upgrade > Recap",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body.md",
+              "section": "Request Body > Editor support",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/python-types.md",
+              "section": "Python Types Intro > Motivation > Add types",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/python-types.md",
+              "section": "Python Types Intro > More motivation",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "After upgrading FastAPI my clients break because failed logins now get 401 instead of 403. How do I get the old behavior back?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__authentication-error-status-code.md",
+              "section": "Use Old 403 Authentication Error Status Codes",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__authentication-error-status-code.md",
+              "section": "Use Old 403 Authentication Error Status Codes",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": "HTTP Basic Auth > Check the username > Return the error",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": "FastAPI > Example upgrade > Recap",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Override the default exception handlers",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I declare a group of cookies as one Pydantic model with Cookie?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models > Cookies with a Pydantic Model",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models > Summary",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": "Query Parameter Models > Summary",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models > Forbid Extra Cookies",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "Where do the docs point me for common tasks like hiding extra data, tagging endpoints, and changing the docs URL?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for tags > Check the docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Docs URLs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-docs-ui-assets.md",
+              "section": "Custom Docs UI Static Assets (Self-Hosting)",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-docs-ui-assets.md",
+              "section": "Custom Docs UI Static Assets (Self-Hosting) > Self-hosting JavaScript and CSS for docs > Test Static Files UI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Which ASGI server runs underneath my app in production, and are there alternatives to it?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": "Run a Server Manually > Install the Server Program",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": "FastAPI CLI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": "Run a Server Manually > ASGI Servers",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/alternatives.md",
+              "section": "Alternatives, Inspiration and Comparisons > Used by **FastAPI** > [Uvicorn](https://uvicorn.dev)",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__middleware.md",
+              "section": "Advanced Middleware > Other middlewares",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use uv to create a project with its own virtual environment?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/virtual-environments.md",
+              "section": "Virtual Environments",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": "Tutorial - User Guide > Install FastAPI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/virtual-environments.md",
+              "section": "Virtual Environments > Learn More",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": "Tutorial - User Guide > Install FastAPI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > Run it",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I document that my endpoint can also return a 404 with its own error model, so it shows up in the docs?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > See it in the docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": "Additional Responses in OpenAPI > Additional Response with `model`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": "Additional Responses in OpenAPI > Combining information",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__additional-responses.md",
+              "section": "Additional Responses in OpenAPI > Additional Response with `model`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__bigger-applications.md",
+              "section": "Bigger Applications - Multiple Files > Another module with `APIRouter` > Add some custom `tags`, `responses`, and `dependencies`",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How can I group several related request headers into one reusable typed object with validation?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__header-param-models.md",
+              "section": "Header Parameter Models",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__header-params.md",
+              "section": "Header Parameters > Duplicate headers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__header-params.md",
+              "section": "Header Parameters > Declare `Header` parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__header-param-models.md",
+              "section": "Header Parameter Models > Forbid Extra Headers",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use generate_unique_id_function to get nicer method names in a generated TypeScript client?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": "Generating SDKs > Custom Operation IDs and Better Method Names > Generate a TypeScript Client with Custom Operation IDs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": "Generating SDKs > Custom Operation IDs and Better Method Names > Custom Generate Unique ID Function",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": "Generating SDKs > Custom Operation IDs and Better Method Names > Generate a TypeScript Client with the Preprocessed OpenAPI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": "Generating SDKs > FastAPI App with Tags > Generate a TypeScript Client with Tags",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__generate-clients.md",
+              "section": "Generating SDKs > Custom Operation IDs and Better Method Names > Preprocess the OpenAPI Specification for the Client Generator",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I force every plain http request to be redirected to the secure version of my site?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": "About HTTPS",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": "About HTTPS > Recap",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": "About HTTPS > HTTPS for Developers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": "About HTTPS > Proxy Forwarded Headers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": "About HTTPS > HTTPS for Developers > DNS",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Why does FastAPI reject JSON requests that have no Content-Type header?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__strict-content-type.md",
+              "section": "Strict Content-Type Checking",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__strict-content-type.md",
+              "section": "Strict Content-Type Checking > Allowing Requests Without Content-Type",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__path-operation-advanced-configuration.md",
+              "section": "Path Operation Advanced Configuration > OpenAPI Extra > Custom OpenAPI content type",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__path-operation-advanced-configuration.md",
+              "section": "Path Operation Advanced Configuration > OpenAPI Extra > Custom OpenAPI content type",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__path-operation-advanced-configuration.md",
+              "section": "Path Operation Advanced Configuration > OpenAPI Extra > Custom OpenAPI content type",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use val_json_bytes to accept base64 data inside JSON?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": "JSON with Bytes as Base64 > Pydantic `bytes` for Input and Output Data",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": "JSON with Bytes as Base64 > Pydantic `bytes`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": "JSON with Bytes as Base64",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": "JSON with Bytes as Base64 > Pydantic `bytes` for Output Data",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__json-base64-bytes.md",
+              "section": "JSON with Bytes as Base64 > Pydantic `bytes`",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I pass dependencies to the path operation decorator when I don't need their return value?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": "Dependencies in path operation decorators",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": "Dependencies in path operation decorators > Dependencies errors and return values > Return values",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": "Dependencies in path operation decorators > Add `dependencies` to the *path operation decorator*",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": "Dependencies in path operation decorators > Add `dependencies` to the *path operation decorator*",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__path-operation-configuration.md",
+              "section": "Path Operation Configuration",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I make my endpoint expect the item nested under its own key in the JSON body, even when it is the only body parameter?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": "Body - Multiple Parameters > Multiple body parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": "Body - Multiple Parameters > Embed a single body parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": "Body - Multiple Parameters > Embed a single body parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-multiple-params.md",
+              "section": "Body - Multiple Parameters > Singular values in body",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/alternatives.md",
+              "section": "Alternatives, Inspiration and Comparisons > Previous tools > [NestJS](https://nestjs.com/) (and [Angular](https://angular.dev/))",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Can I use UUID and datetime.timedelta as parameter types?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": "Extra Data Types > Example",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": "Extra Data Types > Example",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__extra-data-types.md",
+              "section": "Extra Data Types > Other data types",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": "Query Parameter Models",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I render HTML pages with Jinja2 that link to my CSS files?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": "Templates > Templates and static files",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": "Templates > Using `Jinja2Templates`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__templating.md",
+              "section": "Templating - `Jinja2Templates`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": "Templates",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__templates.md",
+              "section": "Templates > Writing templates",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What do I need to install and import to accept form fields instead of a JSON body?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": "Form Data",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": "Form Data > Define `Form` parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__body-fields.md",
+              "section": "Body - Fields > Import `Field`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-form-models.md",
+              "section": "Form Models",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__migrate-from-pydantic-v1-to-pydantic-v2.md",
+              "section": "Migrate from Pydantic v1 to Pydantic v2 > Pydantic v1 in v2 > Pydantic v1 parameters",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use WSGIMiddleware to mount a Flask app?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__wsgi.md",
+              "section": "Including WSGI - Flask, Django, others > Using `WSGIMiddleware`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__wsgi.md",
+              "section": "Including WSGI - Flask, Django, others",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__wsgi.md",
+              "section": "Including WSGI - Flask, Django, others > Using `WSGIMiddleware`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__sub-applications.md",
+              "section": "Sub Applications - Mounts > Mounting a **FastAPI** application",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__sub-applications.md",
+              "section": "Sub Applications - Mounts > Mounting a **FastAPI** application > Sub-application",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I give tokens fine-grained permissions, so a user can read items but not change their own profile?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": "OAuth2 with Password (and hashing), Bearer with JWT tokens > Advanced usage with `scopes`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > JWT token with scopes",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > OAuth2 Security scheme",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Check it",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Global view",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "My tests need the app's startup logic, like opening a database pool, to run. How do I trigger it from the test client?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__testing-events.md",
+              "section": "Testing Events: lifespan and startup - shutdown",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__testing-events.md",
+              "section": "Testing Events: lifespan and startup - shutdown",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": "SQL (Relational) Databases > Create the App with a Single Model > Create Database Tables on Startup",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Running on Startup > Run Automatically on Startup",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": "Testing > Testing: extended example > Extended testing file",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "Should I lock the framework to one specific release in my project, given that it can still ship breaking changes?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__versions.md",
+              "section": "About FastAPI versions",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Resource Utilization",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Recap",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Previous Steps Before Starting",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I set status_code on a Response parameter so I return 201 only when the data was created?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 3,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": "Response - Change Status Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": "Response - Change Status Code > Use a `Response` parameter",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": "Response - Change Status Code > Use a `Response` parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__response-status-code.md",
+              "section": "Response Status Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__path-operation-configuration.md",
+              "section": "Path Operation Configuration > Response Status Code",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I turn off syntax highlighting or change the color theme of the interactive docs page?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__configure-swagger-ui.md",
+              "section": "Configure Swagger UI > Change the Theme",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__configure-swagger-ui.md",
+              "section": "Configure Swagger UI > Disable Syntax Highlighting",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__custom-docs-ui-assets.md",
+              "section": "Custom Docs UI Static Assets (Self-Hosting) > Custom CDN for JavaScript and CSS > Disable the automatic docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps > Check it",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-docs-ui-assets.md",
+              "section": "Custom Docs UI Static Assets (Self-Hosting) > Self-hosting JavaScript and CSS for docs > Disable the automatic docs for static files",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I set a cookie on the client while still returning a normal dict filtered by my response model?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": "Response Cookies > Return a `Response` directly",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": "Response Cookies > Use a `Response` parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__response-cookies.md",
+              "section": "Response Cookies > Return a `Response` directly",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models > Cookies with a Pydantic Model",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-headers.md",
+              "section": "Response Headers > Use a `Response` parameter",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I write a test that connects to my real-time socket endpoint and checks the message it sends?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__testing-websockets.md",
+              "section": "Testing WebSockets",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__testclient.md",
+              "section": "Test Client - `TestClient`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": "Testing > Using `TestClient`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__testing-websockets.md",
+              "section": "Testing WebSockets",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": "Testing > Testing: extended example > Extended testing file",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How can I hide the API documentation in production using an environment setting?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": "Conditional OpenAPI > About security, APIs, and docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": "Conditional OpenAPI > Conditional OpenAPI from settings and env vars",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": "Conditional OpenAPI > About security, APIs, and docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > OpenAPI URL",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__custom-docs-ui-assets.md",
+              "section": "Custom Docs UI Static Assets (Self-Hosting) > Custom CDN for JavaScript and CSS > Disable the automatic docs",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I add dependencies to the whole FastAPI application?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__dependencies__global-dependencies.md",
+              "section": "Global Dependencies",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": "FastAPI in Containers - Docker > Build a Docker Image for FastAPI > Package Requirements",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-in-path-operation-decorators.md",
+              "section": "Dependencies in path operation decorators > Dependencies for a group of *path operations*",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__bigger-applications.md",
+              "section": "Bigger Applications - Multiple Files > The main `FastAPI` > Import `FastAPI`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__global-dependencies.md",
+              "section": "Global Dependencies",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I make one reusable injectable whose behavior is configured by arguments I pass when creating it?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__advanced-dependencies.md",
+              "section": "Advanced Dependencies > Parameterize the instance",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__advanced-dependencies.md",
+              "section": "Advanced Dependencies > Create an instance",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__classes-as-dependencies.md",
+              "section": "Classes as Dependencies > Shortcut",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks > Dependency Injection",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__index.md",
+              "section": "Dependencies > Share `Annotated` dependencies",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I hide one endpoint from the generated API docs while keeping it working?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 5,
+          "retrieved": [
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": "Conditional OpenAPI > About security, APIs, and docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__extending-openapi.md",
+              "section": "Extending OpenAPI > Overriding the defaults > Cache the OpenAPI schema",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/how-to__conditional-openapi.md",
+              "section": "Conditional OpenAPI > About security, APIs, and docs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Exclude parameters from OpenAPI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__path-operation-advanced-configuration.md",
+              "section": "Path Operation Advanced Configuration > Exclude from OpenAPI",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I reject a form submission that includes unexpected extra fields?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-form-models.md",
+              "section": "Form Models > Forbid Extra Form Fields",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-form-models.md",
+              "section": "Form Models > Forbid Extra Form Fields",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__header-param-models.md",
+              "section": "Header Parameter Models > Forbid Extra Headers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__header-param-models.md",
+              "section": "Header Parameter Models > Forbid Extra Headers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cookie-param-models.md",
+              "section": "Cookie Parameter Models > Forbid Extra Cookies",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I send a large binary file to the client in pieces without loading it all into memory?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > File Parameters with `UploadFile`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": "Stream Data > A Custom `PNGStreamingResponse` > Simulate a File",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": "Stream Data > A `StreamingResponse` with `yield`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": "Stream Data > A Custom `PNGStreamingResponse` > Simulate a File",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": "Stream Data > A Custom `PNGStreamingResponse` > Files and Async",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I get the client's IP address inside an endpoint?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__using-request-directly.md",
+              "section": "Using the Request Directly > Use the `Request` object directly",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Testing locally with Traefik",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__get-current-user.md",
+              "section": "Get Current User > Recap",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/index.md",
+              "section": "FastAPI > Example > Check it",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I document webhooks with app.webhooks?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": "OpenAPI Webhooks > Documenting webhooks with **FastAPI** and OpenAPI",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": "OpenAPI Webhooks > An app with webhooks",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": "OpenAPI Webhooks > An app with webhooks > Check the docs",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": "OpenAPI Webhooks > An app with webhooks",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__openapi-webhooks.md",
+              "section": "OpenAPI Webhooks",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I build a login endpoint that checks the submitted credentials and hands back an access token?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": "OAuth2 with Password (and hashing), Bearer with JWT tokens > Hash and verify the passwords",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > The `password` flow",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": "Simple OAuth2 with Password and Bearer > Code to get the `username` and `password` > Check the password > Password hashing > Why use password hashing",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": "Simple OAuth2 with Password and Bearer > Code to get the `username` and `password` > `OAuth2PasswordRequestForm`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": "OAuth2 with Password (and hashing), Bearer with JWT tokens > Handle JWT tokens",
+              "relevant": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
