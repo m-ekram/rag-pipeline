@@ -99,7 +99,9 @@ MIN_CHUNK_CHARS = _int("MIN_CHUNK_CHARS", 80)  # drop near-empty fragments
 #   "path-clean"  breadcrumb minus headings that recur across documents ("Recap", "Check it")
 #   "title"       document title only, e.g. [tutorial request files]
 #   "none"        no header
-HEADER_MODE = os.getenv("HEADER_MODE", "path").strip().lower()
+# Default measured on the dev set (eval-dev-20260914-084331.json): path-clean
+# kept hit@5 at 32/36 and raised MRR 0.762 -> 0.796 over path.
+HEADER_MODE = os.getenv("HEADER_MODE", "path-clean").strip().lower()
 # path-clean: a heading found in at least this many documents is boilerplate.
 BOILERPLATE_HEADING_MIN_DOCS = _int("BOILERPLATE_HEADING_MIN_DOCS", 3)
 

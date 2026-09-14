@@ -1,0 +1,1305 @@
+{
+  "meta": {
+    "git_commit": "6d14f37e81a3b3181e80f4affd9a2885ed7915e2",
+    "git_dirty": false,
+    "questions_file": "questions.yaml",
+    "questions_sha1": "24c059d9404aa4c8f941ba994649046aefd94d82",
+    "embedding": "local:BAAI/bge-small-en-v1.5",
+    "k": 5,
+    "data_dir": "data",
+    "config": "chat=openai:gpt-4o-mini embed=local:BAAI/bge-small-en-v1.5 chunk=1000/150 header=path-clean top_k=5 hybrid=True rerank=off",
+    "python": "3.11.9",
+    "timestamp": "2026-09-14T08:39:01"
+  },
+  "results": [
+    {
+      "config": "tuned",
+      "label": "structure-aware chunks + overlap + 'path-clean' headers, hybrid BM25/dense",
+      "embedding": "local:BAAI/bge-small-en-v1.5",
+      "chunks": 1533,
+      "k": 5,
+      "questions": 36,
+      "hits": 32,
+      "hit_rate": 0.8888888888888888,
+      "hit_rate_ci95": [
+        0.7468,
+        0.9559
+      ],
+      "hit@1": 0.7222222222222222,
+      "hit@3": 0.8888888888888888,
+      "mrr": 0.7962962962962963,
+      "precision": 0.5333333333333333,
+      "latency_ms": {
+        "mean": 15.0,
+        "p95": 19.2
+      },
+      "by_tag": {
+        "exact": "12/12",
+        "multihop": "9/12",
+        "paraphrase": "11/12"
+      },
+      "detail": [
+        {
+          "question": "What is UploadFile used for?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > File Parameters with `UploadFile`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > File Parameters with `UploadFile` > `UploadFile`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > `UploadFile` with Additional Metadata",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > Define `File` Parameters",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > File Parameters with `UploadFile`",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What does jsonable_encoder do?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__encoder.md",
+              "section": "JSON Compatible Encoder",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__encoder.md",
+              "section": "JSON Compatible Encoder > Using the `jsonable_encoder`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__encoder.md",
+              "section": "JSON Compatible Encoder > Using the `jsonable_encoder`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__response-directly.md",
+              "section": "Return a Response Directly > Using the `jsonable_encoder` in a `Response`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": "Custom Response - HTML, Stream, File, others > JSON Responses",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "What is root_path in FastAPI?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Proxy with a stripped path prefix > Setting the `root_path` in the FastAPI app",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Proxy with a stripped path prefix",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__sub-applications.md",
+              "section": "Sub Applications - Mounts > Mounting a **FastAPI** application > Technical Details: `root_path`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Proxy with a stripped path prefix > Checking the current `root_path`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Proxy with a stripped path prefix",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I use response_model_exclude_unset?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Response Model encoding parameters > Use the `response_model_exclude_unset` parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Response Model encoding parameters > `response_model_include` and `response_model_exclude`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Recap",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Response Model encoding parameters > Use the `response_model_exclude_unset` parameter > Data with the same values as the defaults",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Response Model encoding parameters > Use the `response_model_exclude_unset` parameter",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What is OAuth2PasswordBearer?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > **FastAPI**'s `OAuth2PasswordBearer`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > **FastAPI**'s `OAuth2PasswordBearer` > Use it",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": "Simple OAuth2 with Password and Bearer > Code to get the `username` and `password` > `OAuth2PasswordRequestForm`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__first-steps.md",
+              "section": "Security - First Steps > **FastAPI**'s `OAuth2PasswordBearer`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": "Simple OAuth2 with Password and Bearer > Code to get the `username` and `password` > `OAuth2PasswordRequestForm`",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use BackgroundTasks?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks > Technical Details",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__background.md",
+              "section": "Background Tasks - `BackgroundTasks`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks > Using `BackgroundTasks`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks > Caveat",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks > Dependency Injection",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What does CORSMiddleware do?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/reference__middleware.md",
+              "section": "Middleware",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cors.md",
+              "section": "CORS (Cross-Origin Resource Sharing) > Use `CORSMiddleware`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cors.md",
+              "section": "CORS (Cross-Origin Resource Sharing) > More info",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__cors.md",
+              "section": "CORS (Cross-Origin Resource Sharing)",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__middleware.md",
+              "section": "Advanced Middleware",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How is Annotated used with Query?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Alternative (old): `Query` as the default value > Advantages of `Annotated`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Alternative (old): `Query` as the default value > `Query` as the default value or in `Annotated`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Alternative (old): `Query` as the default value > Advantages of `Annotated`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Use `Annotated` in the type for the `q` parameter",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params-str-validations.md",
+              "section": "Query Parameters and String Validations > Declare more metadata",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "What is StreamingResponse?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": "Custom Response - HTML, Stream, File, others > Available responses > `StreamingResponse`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": "Custom Response - HTML, Stream, File, others > Available responses > `StreamingResponse`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": "Custom Response - HTML, Stream, File, others > Available responses > `FileResponse`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": "Stream Data > A Custom `PNGStreamingResponse`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__stream-data.md",
+              "section": "Stream Data > A Custom `PNGStreamingResponse`",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I use HTTPException?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Use `HTTPException`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Use `HTTPException` > Raise an `HTTPException` in your code",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Use `HTTPException` > Raise an `HTTPException` in your code",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Use `HTTPException` > The resulting response",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > Using `Depends` and others",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "What is TestClient?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": "Testing > Using `TestClient`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": "Testing > Using `TestClient`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__testclient.md",
+              "section": "Test Client - `TestClient`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__testing.md",
+              "section": "Testing > Testing: extended example > Extended testing file",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__async-tests.md",
+              "section": "Async Tests > In Detail",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I declare a WebSocket endpoint?",
+          "tags": [
+            "exact"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > WebSockets client > In production",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > Create a `websocket`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/reference__websockets.md",
+              "section": "WebSockets",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > WebSockets client > In production",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > More info",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I send a file from a browser to my API?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > What is \"Form Data\"",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-forms.md",
+              "section": "Form Data > About \"Form Fields\"",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/reference__uploadfile.md",
+              "section": "`UploadFile` class",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__request-files.md",
+              "section": "Request Files > Recap",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How can I make my API reject a request with a helpful message when something is wrong?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Override the default exception handlers > Override request validation exceptions",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Override the default exception handlers > Use the `RequestValidationError` body",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Override the default exception handlers > Override the `HTTPException` error handler",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Use `HTTPException` > Raise an `HTTPException` in your code",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__handling-errors.md",
+              "section": "Handling Errors > Override the default exception handlers > Use the `RequestValidationError` body",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I stop my API from returning a user's password in the response?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__response-model.md",
+              "section": "Response Model - Return Type > Return the same input data",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": "HTTP Basic Auth > Check the username > Timing Attacks",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": "HTTP Basic Auth > Check the username > Timing Attacks > The time to answer helps the attackers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": "HTTP Basic Auth > Check the username > Return the error",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": "Simple OAuth2 with Password and Bearer > Return the token",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I run some code once when the application starts up?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 3,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Running on Startup",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Running on Startup > Run Automatically on Startup",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__events.md",
+              "section": "Lifespan Events > Alternative Events (deprecated) > `startup` event",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": "FastAPI CLI",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I share a database connection across many endpoints without repeating myself?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": "SQL (Relational) Databases > Create the App with a Single Model > Create an Engine",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks > Caveat",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": "SQL (Relational) Databases > Update the App with Multiple Models > Read Heroes with `HeroPublic`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": "SQL (Relational) Databases > Create the App with a Single Model > Create a Session Dependency",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": "SQL (Relational) Databases > Create the App with a Single Model > Create an Engine",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "My frontend on another domain gets blocked by the browser. How do I fix it?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__cors.md",
+              "section": "CORS (Cross-Origin Resource Sharing) > Steps",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Proxy Forwarded Headers",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Client-Side Routing",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Fallback Auto",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I do slow work after replying to the user?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__background-tasks.md",
+              "section": "Background Tasks",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__middleware.md",
+              "section": "Middleware > Create a middleware > Before and after the `response`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__http-basic-auth.md",
+              "section": "HTTP Basic Auth > Check the username > Timing Attacks",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/reference__background.md",
+              "section": "Background Tasks - `BackgroundTasks`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": "Response - Change Status Code > Use a `Response` parameter",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I read configuration from environment variables?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/environment-variables.md",
+              "section": "Environment Variables",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__settings.md",
+              "section": "Settings and Environment Variables",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__settings.md",
+              "section": "Settings and Environment Variables > Reading a `.env` file",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__settings.md",
+              "section": "Settings and Environment Variables > Reading a `.env` file > The `.env` file",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__settings.md",
+              "section": "Settings and Environment Variables > Pydantic `Settings` > Create the `Settings` object",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I check that my endpoints actually work before shipping?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__testing-events.md",
+              "section": "Testing Events: lifespan and startup - shutdown",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Check Directory",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Check Directory",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__testing-events.md",
+              "section": "Testing Events: lifespan and startup - shutdown",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend > Client-Side Routing",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I restrict a number to a valid range in the URL?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__path-params-numeric-validations.md",
+              "section": "Path Parameters and Numeric Validations > Number validations: greater than or equal",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters > Required query parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": "Query Parameter Models > Forbid Extra Query Parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters > Required query parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-param-models.md",
+              "section": "Query Parameter Models > Forbid Extra Query Parameters",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I keep a connection open and push updates to the client?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > Handling disconnections and multiple clients",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > Handling disconnections and multiple clients",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__server-sent-events.md",
+              "section": "Server-Sent Events (SSE) > Technical Details",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__websockets.md",
+              "section": "WebSockets > Handling disconnections and multiple clients",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body-updates.md",
+              "section": "Body - Updates > Partial updates with `PATCH`",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I convert an object into something JSON-serialisable?",
+          "tags": [
+            "paraphrase"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__encoder.md",
+              "section": "JSON Compatible Encoder > Using the `jsonable_encoder`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__encoder.md",
+              "section": "JSON Compatible Encoder",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__encoder.md",
+              "section": "JSON Compatible Encoder > Using the `jsonable_encoder`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__stream-json-lines.md",
+              "section": "Stream JSON Lines > Stream JSON Lines with FastAPI > No Return Type",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-directly.md",
+              "section": "Return a Response Directly > Using the `jsonable_encoder` in a `Response`",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I package my FastAPI app to run in a container?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": "FastAPI in Containers - Docker > Build a Docker Image for FastAPI > Create the **FastAPI** Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": "FastAPI in Containers - Docker",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": "Run a Server Manually > Use the `fastapi run` Command",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": "FastAPI in Containers - Docker > Build a Docker Image with a Single-File FastAPI",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__index.md",
+              "section": "Tutorial - User Guide > Run the code",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How many worker processes should I run in production?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Replication - Processes and Memory",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Replication - Processes and Memory > Multiple Processes - An Example",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__server-workers.md",
+              "section": "Server Workers - Uvicorn with Workers > Multiple Workers",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": "FastAPI in Containers - Docker > Replication - Number of Processes > Containers with Multiple Processes and Special Cases",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts > Replication - Processes and Memory > Worker Processes and Ports",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "My app is behind nginx and the generated docs URLs are wrong. What do I set?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 3,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Docs URLs",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__behind-a-proxy.md",
+              "section": "Behind a Proxy > Testing locally with Traefik > Check the docs UI",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for API",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__frontend.md",
+              "section": "Frontend",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I hash and verify user passwords?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": "OAuth2 with Password (and hashing), Bearer with JWT tokens > Hash and verify the passwords",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__security__simple-oauth2.md",
+              "section": "Simple OAuth2 with Password and Bearer > Code to get the `username` and `password` > Check the password",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__oauth2-jwt.md",
+              "section": "OAuth2 with Password (and hashing), Bearer with JWT tokens > Hash and verify the passwords",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Verify the `scopes`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Verify the `username` and data shape",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I get the currently logged-in user inside an endpoint?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Global view",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__security__get-current-user.md",
+              "section": "Get Current User > Recap",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Global view",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > Use `SecurityScopes`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__security__oauth2-scopes.md",
+              "section": "OAuth2 scopes > OAuth2 Security scheme",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "What is the difference between a path parameter and a query parameter?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters > Defaults",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__body.md",
+              "section": "Request Body > Request body + path + query parameters",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__query-params.md",
+              "section": "Query Parameters > Multiple path and query parameters",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "When should I use async def instead of def for an endpoint?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/async.md",
+              "section": "Concurrency and async / await > `async` and `await` > More technical details",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/async.md",
+              "section": "Concurrency and async / await > In a hurry?",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/async.md",
+              "section": "Concurrency and async / await > Very Technical Details > Path operation functions",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__index.md",
+              "section": "Dependencies > To `async` or not to `async`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/async.md",
+              "section": "Concurrency and async / await > Very Technical Details",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I close a database session reliably even if the endpoint raises?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__advanced-dependencies.md",
+              "section": "Advanced Dependencies > Dependencies with `yield`, `HTTPException`, `except` and Background Tasks > Dependencies with `yield` and `StreamingResponse`, Technical Details > Use Cases with Early Exit Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__dependencies__dependencies-with-yield.md",
+              "section": "Dependencies with yield > A database dependency with `yield`",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/advanced__advanced-dependencies.md",
+              "section": "Advanced Dependencies > Dependencies with `yield`, `HTTPException`, `except` and Background Tasks > Dependencies with `yield` and `StreamingResponse`, Technical Details > Use Cases with Early Exit Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__advanced-dependencies.md",
+              "section": "Advanced Dependencies > Dependencies with `yield`, `HTTPException`, `except` and Background Tasks > Dependencies with `yield` and `StreamingResponse`, Technical Details > Use Cases with Early Exit Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__sql-databases.md",
+              "section": "SQL (Relational) Databases > Create the App with a Single Model > Create an Engine",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I add a description and tags that show up in the docs UI?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 1,
+          "retrieved": [
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for tags",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for tags > Check the docs",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for tags > Create metadata for tags",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__metadata.md",
+              "section": "Metadata and Docs URLs > Metadata for tags > Use your tags",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/tutorial__path-operation-configuration.md",
+              "section": "Path Operation Configuration > Description from docstring",
+              "relevant": true
+            }
+          ]
+        },
+        {
+          "question": "How do I serve CSS and images from my FastAPI app?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": "Run a Server Manually > Use the `fastapi run` Command",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__first-steps.md",
+              "section": "First Steps",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": "FastAPI CLI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/fastapi-cli.md",
+              "section": "FastAPI CLI",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__manually.md",
+              "section": "Run a Server Manually > Use the `fastapi run` Command",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I return a 201 instead of the default status code?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": false,
+          "first_relevant_rank": 0,
+          "retrieved": [
+            {
+              "source": "fastapi/advanced__additional-status-codes.md",
+              "section": "Additional Status Codes > Additional status codes",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__response-status-code.md",
+              "section": "Response Status Code > About HTTP status codes",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": "Response - Change Status Code",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__custom-response.md",
+              "section": "Custom Response - HTML, Stream, File, others > Available responses > `RedirectResponse`",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/advanced__response-change-status-code.md",
+              "section": "Response - Change Status Code > Use a `Response` parameter",
+              "relevant": false
+            }
+          ]
+        },
+        {
+          "question": "How do I set up HTTPS for a FastAPI deployment?",
+          "tags": [
+            "multihop"
+          ],
+          "hit": true,
+          "first_relevant_rank": 2,
+          "retrieved": [
+            {
+              "source": "fastapi/deployment__docker.md",
+              "section": "FastAPI in Containers - Docker > HTTPS",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__https.md",
+              "section": "About HTTPS > Recap",
+              "relevant": true
+            },
+            {
+              "source": "fastapi/deployment__fastapicloud.md",
+              "section": "FastAPI Cloud",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/deployment__concepts.md",
+              "section": "Deployments Concepts",
+              "relevant": false
+            },
+            {
+              "source": "fastapi/tutorial__cors.md",
+              "section": "CORS (Cross-Origin Resource Sharing) > Use `CORSMiddleware`",
+              "relevant": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
