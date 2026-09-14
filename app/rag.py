@@ -13,7 +13,7 @@ from langchain_core.prompts import ChatPromptTemplate
 import config
 from app.attribution import attribute
 from app.providers import get_chat_model, get_embeddings
-from app.retriever import build_retriever, citations, format_context
+from app.retriever import build_retriever, build_sparse, citations, format_context
 from app.store import index_meta, load_chunks, load_index
 
 logger = logging.getLogger(__name__)
@@ -87,7 +87,9 @@ class RagEngine:
     def __init__(self, index_dir: str | None = None):
         self.store = load_index(index_dir)
         self.chunks = load_chunks(index_dir)
-        self.retriever = build_retriever(self.store, self.chunks)
+        # BM25 is built once and shared by every per-request retriever.
+        self.sparse = build_sparse(self.chunks) if config.USE_HYBRID and self.chunks else None
+        self.retriever = build_retriever(self.store, self.chunks, sparse=self.sparse)
         self.meta = index_meta(index_dir)
         self.llm = get_chat_model()
         self._embeddings = get_embeddings()
@@ -107,7 +109,7 @@ class RagEngine:
             return question
 
     def retrieve(self, query: str, top_k: int | None = None) -> list[Document]:
-        retriever = self.retriever if top_k is None else build_retriever(self.store, self.chunks, top_k)
+        retriever = self.retriever if top_k is None else build_retriever(self.store, self.chunks, top_k, self.sparse)
         return retriever.invoke(query)[: top_k or config.TOP_K]
 
     # -- public API ------------------------------------------------------------

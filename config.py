@@ -20,14 +20,14 @@ def _bool(name: str, default: bool) -> bool:
 
 
 # --- provider -----------------------------------------------------------------
-# "google" (default, has a free tier), "openai", or "local".
+# "openai" (default), "local", or "google".
 #
 # EMBED_PROVIDER is separate on purpose: embedding and chat have very different
 # cost shapes. Embedding is a one-time bulk job over the whole corpus and is the
 # thing that hits quota walls; chat is one call per question and rarely does.
-# Running embeddings locally while chat stays on a hosted model is the
-# combination that makes this project free to re-index as often as you like.
-PROVIDER = os.getenv("LLM_PROVIDER", "google").strip().lower()
+# Running embeddings locally while chat stays on a hosted model is a sensible
+# mix when re-indexing often.
+PROVIDER = os.getenv("LLM_PROVIDER", "openai").strip().lower()
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -36,19 +36,31 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", PROVIDER).strip().lower()
 
 _DEFAULT_MODELS = {
-    "google": ("gemini-flash-latest", "models/gemini-embedding-001"),
     "openai": ("gpt-4o-mini", "text-embedding-3-small"),
     "local": ("models/qwen2.5-3b-instruct-q4_k_m.gguf", "BAAI/bge-small-en-v1.5"),
+    "google": ("gemini-flash-latest", "models/gemini-embedding-001"),
+    # Deterministic hash-seeded vectors: no model, no network. Used by the scale
+    # benchmark to exercise everything except embedding quality.
+    "fake": (None, "fake-1536"),
 }
-_chat_default = _DEFAULT_MODELS.get(PROVIDER, _DEFAULT_MODELS["google"])[0]
-_embed_default = _DEFAULT_MODELS.get(EMBED_PROVIDER, _DEFAULT_MODELS["google"])[1]
 
-CHAT_MODEL = os.getenv("CHAT_MODEL", _chat_default or "gemini-flash-latest")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", _embed_default)
 
-# Local embedding knobs (ignored by hosted providers).
-EMBED_DEVICE = os.getenv("EMBED_DEVICE", "cpu")
+def default_embedding_model(provider: str) -> str:
+    return _DEFAULT_MODELS.get(provider, _DEFAULT_MODELS["openai"])[1]
+
+
+CHAT_MODEL = os.getenv("CHAT_MODEL", _DEFAULT_MODELS.get(PROVIDER, _DEFAULT_MODELS["openai"])[0] or "gpt-4o-mini")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", default_embedding_model(EMBED_PROVIDER))
+
+# Local embedding and re-ranking run on ONNX Runtime (fastembed), not PyTorch:
+# a fraction of the install size, and it loads on machines whose application
+# control policy blocks torch's unsigned DLLs.
+MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", ".cache/models")
 EMBED_NORMALIZE = _bool("EMBED_NORMALIZE", True)
+# BGE v1.5 is trained with this instruction on the *query* side only; passages
+# are embedded bare. Leaving it off costs retrieval quality on short questions.
+# Applied only to models whose name contains "bge"; set to "" to disable.
+BGE_QUERY_PROMPT = os.getenv("BGE_QUERY_PROMPT", "Represent this sentence for searching relevant passages: ")
 
 # Local chat knobs (llama.cpp). n_ctx must hold the system prompt plus TOP_K
 # passages plus the answer; 4096 is comfortable for 5 chunks of ~1000 chars.
@@ -72,10 +84,21 @@ TEMPERATURE = _float("TEMPERATURE", 0.0)
 DATA_DIR = os.getenv("DATA_DIR", "data")
 INDEX_DIR = os.getenv("INDEX_DIR", "faiss_index")
 
+# --- ingestion: loading -------------------------------------------------------
+# Worker processes for document loading. PDF text extraction is the slow stage
+# on a 10k-page corpus and parallelises cleanly per file. 0 = auto (one worker
+# per core, but single-process for small corpora where spawn cost dominates).
+INGEST_WORKERS = _int("INGEST_WORKERS", 0)
+
 # --- chunking -----------------------------------------------------------------
 CHUNK_SIZE = _int("CHUNK_SIZE", 1000)
 CHUNK_OVERLAP = _int("CHUNK_OVERLAP", 150)
 MIN_CHUNK_CHARS = _int("MIN_CHUNK_CHARS", 80)  # drop near-empty fragments
+# Contextual header prepended to every chunk before embedding:
+#   "path"   section breadcrumb, e.g. [Request Files > What is UploadFile]
+#   "title"  document title only, e.g. [tutorial request files]
+#   "none"   no header
+HEADER_MODE = os.getenv("HEADER_MODE", "path").strip().lower()
 
 # --- retrieval ----------------------------------------------------------------
 TOP_K = _int("TOP_K", 5)  # chunks handed to the LLM
@@ -92,18 +115,23 @@ HYBRID_WEIGHTS = (
     _float("WEIGHT_DENSE", 0.6),
     _float("WEIGHT_SPARSE", 0.4),
 )
+# Cross-encoder re-ranking: pull RERANK_FETCH_K candidates from the first-stage
+# retriever, score each (question, passage) pair jointly, keep the best TOP_K.
+RERANK = _bool("RERANK", False)
+RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-base")
+RERANK_FETCH_K = _int("RERANK_FETCH_K", 30)
 
-# --- ingestion ----------------------------------------------------------------
+# --- ingestion: embedding -----------------------------------------------------
 # Local embedding has no quota and no per-request overhead, so it wants big
 # batches; hosted providers want small ones so a burst cannot overshoot a cap.
-EMBED_BATCH_SIZE = _int("EMBED_BATCH_SIZE", 64 if EMBED_PROVIDER == "local" else 20)
+EMBED_BATCH_SIZE = _int("EMBED_BATCH_SIZE", 64 if EMBED_PROVIDER == "local" else 100)
 EMBED_MAX_RETRIES = _int("EMBED_MAX_RETRIES", 8)
 # Requests per minute to allow ourselves. The provider counts one request per
 # document, not per batch, so this throttles documents. Google's free tier caps
 # embedding at 100/min; 90 leaves headroom for clock skew.
-# 0 disables throttling entirely - correct for local models, which answer from
-# your own CPU and have no rate limit to respect.
-EMBED_RPM = _int("EMBED_RPM", 0 if EMBED_PROVIDER == "local" else 90)
+# 0 disables throttling entirely - correct for local models and for OpenAI,
+# whose paid-tier limits are far above anything a single ingest reaches.
+EMBED_RPM = _int("EMBED_RPM", 90 if EMBED_PROVIDER == "google" else 0)
 # Cache vectors on disk so an interrupted ingest resumes instead of re-paying.
 EMBED_CACHE = _bool("EMBED_CACHE", True)
 EMBED_CACHE_DIR = os.getenv("EMBED_CACHE_DIR", ".embed_cache")
@@ -136,18 +164,20 @@ def require_api_key() -> None:
     )
 
 
-def require_embed_key() -> None:
+def require_embed_key(provider: str | None = None) -> None:
     """Embedding-only entry points (ingest, eval) need no key when local."""
-    if EMBED_PROVIDER == "local":
+    provider = provider or EMBED_PROVIDER
+    if provider in {"local", "fake"}:
         return
-    if EMBED_PROVIDER == "openai" and not OPENAI_API_KEY:
-        raise SystemExit("OPENAI_API_KEY is not set (EMBED_PROVIDER=openai).")
-    if EMBED_PROVIDER == "google" and not GOOGLE_API_KEY:
-        raise SystemExit("GOOGLE_API_KEY is not set (EMBED_PROVIDER=google).")
+    if provider == "openai" and not OPENAI_API_KEY:
+        raise SystemExit("OPENAI_API_KEY is not set (embedding provider is openai).")
+    if provider == "google" and not GOOGLE_API_KEY:
+        raise SystemExit("GOOGLE_API_KEY is not set (embedding provider is google).")
 
 
 def summary() -> str:
     return (
         f"chat={PROVIDER}:{CHAT_MODEL} embed={EMBED_PROVIDER}:{EMBEDDING_MODEL} "
-        f"chunk={CHUNK_SIZE}/{CHUNK_OVERLAP} top_k={TOP_K} hybrid={USE_HYBRID}"
+        f"chunk={CHUNK_SIZE}/{CHUNK_OVERLAP} header={HEADER_MODE} top_k={TOP_K} "
+        f"hybrid={USE_HYBRID} rerank={RERANK_MODEL if RERANK else 'off'}"
     )

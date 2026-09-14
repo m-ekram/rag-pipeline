@@ -2,6 +2,7 @@
 
     python -m app.ingest
     python -m app.ingest --rebuild --chunk-size 800 --chunk-overlap 120
+    python -m app.ingest --dry-run            # load + chunk only: page/chunk counts
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from pathlib import Path
 
 import config
 from app.chunking import stats, structured_split
-from app.loaders import load_directory
+from app.loaders import corpus_stats, load_directory
 from app.store import build_index, save_index
 
 
@@ -25,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--index-dir", default=config.INDEX_DIR)
     parser.add_argument("--chunk-size", type=int, default=config.CHUNK_SIZE)
     parser.add_argument("--chunk-overlap", type=int, default=config.CHUNK_OVERLAP)
+    parser.add_argument("--workers", type=int, default=None, help="loader processes (default: auto)")
     parser.add_argument("--rebuild", action="store_true", help="delete any existing index first")
     parser.add_argument("--dry-run", action="store_true", help="load and chunk, but do not embed")
     args = parser.parse_args(argv)
@@ -34,28 +36,30 @@ def main(argv: list[str] | None = None) -> int:
         config.require_embed_key()
 
     index_path = Path(args.index_dir)
-    if args.rebuild and index_path.exists():
+    if args.rebuild and index_path.exists() and not args.dry_run:
         shutil.rmtree(index_path)
         print(f"Removed existing index at {index_path}")
 
     started = time.time()
 
-    docs = load_directory(args.data_dir)
+    docs = load_directory(args.data_dir, workers=args.workers)
+    corpus = corpus_stats(docs)
     chunks = structured_split(docs, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
 
     s = stats(chunks)
     print(
-        f"\n{s['count']} chunks from {s['sources']} document(s) | "
-        f"chars min={s['min_chars']} median={s['median_chars']} mean={s['mean_chars']} max={s['max_chars']}"
+        f"\n{corpus['files']} file(s), {corpus['pdf_pages']} PDF page(s), {corpus['chars'] / 1e6:.1f}M chars"
+        f"  ->  {s['count']} chunks | chars min={s['min_chars']} median={s['median_chars']} "
+        f"mean={s['mean_chars']} max={s['max_chars']}  ({time.time() - started:.1f}s)"
     )
 
     if args.dry_run:
         print("\n--dry-run: stopping before embedding.")
         return 0
 
-    print(f"Embedding with {config.EMBEDDING_MODEL} ({config.PROVIDER})...")
+    print(f"Embedding with {config.EMBEDDING_MODEL} ({config.EMBED_PROVIDER})...")
     store = build_index(chunks)
-    path = save_index(store, chunks, args.index_dir)
+    path = save_index(store, chunks, args.index_dir, corpus=corpus)
 
     print(f"\nIndex written to {path.resolve()} in {time.time() - started:.1f}s")
     print("Start the API with:  uvicorn app.api:app --reload")

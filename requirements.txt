@@ -1,32 +1,25 @@
 # --- core RAG stack ---
-langchain>=0.3.0
-langchain-core>=0.3.0
-langchain-community>=0.3.0
-langchain-text-splitters>=0.3.0
+langchain>=1.0.0
+langchain-core>=1.0.0
+langchain-classic>=1.0.0          # EnsembleRetriever, ContextualCompressionRetriever, CrossEncoderReranker
+langchain-community>=0.4.0        # FAISS wrapper, BM25Retriever
+langchain-text-splitters>=1.0.0
+langchain-openai>=1.0.0           # default provider: gpt-4o-mini + text-embedding-3-small
 faiss-cpu>=1.8.0
+numpy>=1.26.0
 
-# --- local inference (the default: no API key, no quota) ---
-# torch: install the CPU build first to avoid pulling ~2.5 GB of CUDA:
-#   pip install --index-url https://download.pytorch.org/whl/cpu torch
-sentence-transformers>=3.0.0     # embeddings: BAAI/bge-small-en-v1.5
-langchain-huggingface>=0.1.0
-# llama-cpp-python: prebuilt CPU wheel avoids a source build (which fails on
-# Windows due to MAX_PATH). Install with:
-#   pip install llama-cpp-python --only-binary :all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
-llama-cpp-python>=0.3.0          # chat: Qwen2.5-3B-Instruct Q4_K_M (GGUF)
-huggingface-hub>=0.24.0
+# --- local embeddings + cross-encoder re-ranking ---
+# ONNX Runtime, not PyTorch: ~10x smaller install, which is what keeps the
+# Docker image small enough for a modest EC2 instance.
+fastembed>=0.5.0
 
-# --- hosted providers (optional alternatives) ---
+# --- optional hosted alternative ---
 langchain-google-genai>=2.0.0
-langchain-openai>=0.2.0
 
 # --- document loading ---
 pypdf>=4.2.0
 beautifulsoup4>=4.12.0
 python-docx>=1.1.0
-
-# --- retrieval ---
-rank-bm25>=0.2.2
 
 # --- serving ---
 fastapi>=0.111.0
@@ -38,3 +31,6 @@ sse-starlette>=2.1.0
 python-dotenv>=1.0.0
 pyyaml>=6.0
 tqdm>=4.66.0
+
+# Offline chat on llama.cpp lives in requirements-local-llm.txt;
+# benchmark tooling in requirements-dev.txt.

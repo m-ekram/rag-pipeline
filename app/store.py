@@ -8,9 +8,13 @@ import logging
 import random
 import re
 import time
+import uuid
 from collections import deque
 from pathlib import Path
 
+import faiss
+import numpy as np
+from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
@@ -22,8 +26,12 @@ logger = logging.getLogger(__name__)
 CHUNKS_FILE = "chunks.jsonl"
 META_FILE = "index_meta.json"
 
+# Vectors are moved into FAISS in blocks, so peak memory is the index itself
+# plus one block - never a second full copy of the corpus.
+_ADD_BLOCK = 4096
 
 _RETRY_DELAY_RE = re.compile(r"retry in ([\d.]+)s|'retryDelay': '(\d+)s'", re.IGNORECASE)
+_KEY_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
 class _RateLimiter:
@@ -70,7 +78,7 @@ def _retry_delay_from(message: str) -> float | None:
 
 
 def _embed_with_retry(embeddings, batch: list[str], limiter: "_RateLimiter | None" = None) -> list[list[float]]:
-    """Free-tier embedding endpoints rate-limit aggressively; pace, then retry."""
+    """Hosted embedding endpoints rate-limit aggressively; pace, then retry."""
     delay = 2.0
     for attempt in range(config.EMBED_MAX_RETRIES):
         if limiter:
@@ -89,8 +97,8 @@ def _embed_with_retry(embeddings, batch: list[str], limiter: "_RateLimiter | Non
                         "Embedding quota exhausted and retries gave up.\n"
                         "  - lower the rate with EMBED_RPM (currently "
                         f"{config.EMBED_RPM}) in .env, or\n"
-                        "  - wait for the daily quota to reset, or\n"
-                        "  - switch provider with LLM_PROVIDER=openai.\n"
+                        "  - wait for the quota to reset, or\n"
+                        "  - switch provider with EMBED_PROVIDER=local.\n"
                         f"Provider said: {message[:300]}"
                     ) from exc
                 raise
@@ -108,55 +116,163 @@ def _embed_with_retry(embeddings, batch: list[str], limiter: "_RateLimiter | Non
     raise RuntimeError("unreachable")  # pragma: no cover
 
 
-def _cache_path() -> Path:
-    slug = config.EMBEDDING_MODEL.replace("/", "_")
-    return Path(config.EMBED_CACHE_DIR) / f"{slug}.jsonl"
-
-
-def _load_cache() -> dict[str, list[float]]:
-    """Vectors already paid for, keyed by a hash of the exact text."""
-    path = _cache_path()
-    if not path.exists():
-        return {}
-    cache: dict[str, list[float]] = {}
-    with path.open(encoding="utf-8") as fh:
-        for line in fh:
-            try:
-                record = json.loads(line)
-                cache[record["k"]] = record["v"]
-            except (json.JSONDecodeError, KeyError):
-                continue  # a torn final line from an interrupted run
-    return cache
-
-
 def _text_key(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8")).hexdigest()
 
 
-def build_index(chunks: list[Document], show_progress: bool = True) -> FAISS:
+def _slug(model_name: str) -> str:
+    return re.sub(r"[^\w.-]", "_", model_name)
+
+
+class EmbedCache:
+    """Vectors already paid for, keyed by a hash of the exact chunk text.
+
+    On disk: `keys.txt` (one hash per line) and `vectors.f32` (raw float32
+    rows, same order). The old format was JSONL of Python float lists; loading
+    that for a 10k-page corpus (~40k chunks x 1536 dims) materialised ~60M
+    Python floats, about 2 GB of heap before FAISS saw a single vector. Here
+    only the key->row dict lives in RAM and rows are read through a memory map.
+
+    Appends are flushed per batch, so a run killed by a rate limit resumes from
+    the last completed batch. A torn tail from a killed run is trimmed on open.
+    With `enabled=False` the same interface is kept purely in memory.
+    """
+
+    def __init__(self, model_name: str, root: str | Path | None = None, enabled: bool = True):
+        self.enabled = enabled
+        self.dir = Path(root or config.EMBED_CACHE_DIR) / _slug(model_name)
+        self._legacy = Path(root or config.EMBED_CACHE_DIR) / f"{model_name.replace('/', '_')}.jsonl"
+        self.index: dict[str, int] = {}
+        self.rows = 0
+        self.dim: int | None = None
+        self._memory: list[np.ndarray] = []
+        if enabled:
+            self._open()
+
+    @property
+    def _keys_path(self) -> Path:
+        return self.dir / "keys.txt"
+
+    @property
+    def _vectors_path(self) -> Path:
+        return self.dir / "vectors.f32"
+
+    @property
+    def _meta_path(self) -> Path:
+        return self.dir / "meta.json"
+
+    def _open(self) -> None:
+        if not self._meta_path.exists():
+            if self._legacy.exists():
+                self._migrate_legacy()
+            return
+        self.dim = json.loads(self._meta_path.read_text(encoding="utf-8"))["dim"]
+        keys = []
+        if self._keys_path.exists():
+            keys = [k for k in self._keys_path.read_text(encoding="utf-8").split("\n") if _KEY_RE.match(k)]
+        row_bytes = 4 * self.dim
+        on_disk = self._vectors_path.stat().st_size // row_bytes if self._vectors_path.exists() else 0
+        n = min(len(keys), on_disk)
+        if n != len(keys) or self._vectors_path.exists() and self._vectors_path.stat().st_size != n * row_bytes:
+            logger.warning("Embedding cache: trimming torn tail (%d keys, %d vectors) to %d rows", len(keys), on_disk, n)
+            with self._vectors_path.open("r+b") as fh:
+                fh.truncate(n * row_bytes)
+            self._keys_path.write_text("".join(f"{k}\n" for k in keys[:n]), encoding="utf-8")
+        self.index = {k: i for i, k in enumerate(keys[:n])}
+        self.rows = n
+
+    def _migrate_legacy(self) -> None:
+        """One-time streaming conversion from the old JSONL cache."""
+        logger.info("Embedding cache: migrating %s to float32 storage", self._legacy.name)
+        keys: list[str] = []
+        vectors: list[list[float]] = []
+        with self._legacy.open(encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    record = json.loads(line)
+                    keys.append(record["k"])
+                    vectors.append(record["v"])
+                except (json.JSONDecodeError, KeyError):
+                    continue  # a torn final line from an interrupted run
+                if len(keys) >= 1000:
+                    self.add(keys, np.asarray(vectors, dtype=np.float32))
+                    keys, vectors = [], []
+        if keys:
+            self.add(keys, np.asarray(vectors, dtype=np.float32))
+
+    def __contains__(self, key: str) -> bool:
+        return key in self.index
+
+    def add(self, keys: list[str], vectors: np.ndarray) -> None:
+        vectors = np.ascontiguousarray(vectors, dtype=np.float32)
+        if vectors.ndim != 2 or vectors.shape[0] != len(keys):
+            raise ValueError(f"Expected {len(keys)} vectors, got array of shape {vectors.shape}")
+        if self.dim is None:
+            self.dim = int(vectors.shape[1])
+            if self.enabled:
+                self.dir.mkdir(parents=True, exist_ok=True)
+                self._meta_path.write_text(json.dumps({"dim": self.dim}), encoding="utf-8")
+        elif vectors.shape[1] != self.dim:
+            raise ValueError(f"Cache holds {self.dim}-d vectors; got {vectors.shape[1]}-d")
+
+        if self.enabled:
+            # Vectors before keys: a kill between the two leaves an orphan row,
+            # which _open trims, never a key pointing at a missing row.
+            with self._vectors_path.open("ab") as fh:
+                fh.write(vectors.tobytes())
+            with self._keys_path.open("a", encoding="utf-8") as fh:
+                fh.write("".join(f"{k}\n" for k in keys))
+        else:
+            self._memory.append(vectors)
+
+        for i, key in enumerate(keys):
+            self.index[key] = self.rows + i
+        self.rows += len(keys)
+
+    def get(self, keys: list[str]) -> np.ndarray:
+        rows = np.fromiter((self.index[k] for k in keys), dtype=np.int64, count=len(keys))
+        if self.enabled:
+            matrix = np.memmap(self._vectors_path, dtype=np.float32, mode="r", shape=(self.rows, self.dim))
+        else:
+            matrix = np.concatenate(self._memory) if len(self._memory) > 1 else self._memory[0]
+            self._memory = [matrix]
+        return np.asarray(matrix[rows], dtype=np.float32)
+
+
+def build_index(
+    chunks: list[Document],
+    show_progress: bool = True,
+    embeddings=None,
+    model_name: str | None = None,
+) -> FAISS:
     """Embed every chunk in batches and assemble a FAISS index.
 
-    Vectors are cached to disk as they arrive. A run killed by a rate limit or
-    a lost connection therefore resumes from where it stopped instead of
-    re-spending quota on work already done.
+    `embeddings`/`model_name` default to the configured provider; the eval
+    harness passes others to compare models. The cache is keyed by model, since
+    vectors from different models are not comparable.
     """
-    embeddings = get_embeddings()
-    texts = [c.page_content for c in chunks]
-    metadatas = [c.metadata for c in chunks]
+    if not chunks:
+        raise SystemExit("Nothing to index: chunking produced 0 chunks.")
+    if embeddings is None:
+        embeddings = get_embeddings()
+        model_name = model_name or config.EMBEDDING_MODEL
+    model_name = model_name or getattr(embeddings, "model", None) or getattr(embeddings, "model_name", "unknown")
 
-    cache = _load_cache() if config.EMBED_CACHE else {}
-    todo = [t for t in texts if _text_key(t) not in cache]
-    if cache:
+    texts = [c.page_content for c in chunks]
+    keys = [_text_key(t) for t in texts]
+    cache = EmbedCache(model_name, enabled=config.EMBED_CACHE)
+
+    todo: dict[str, str] = {}
+    for key, text in zip(keys, texts):
+        if key not in cache and key not in todo:
+            todo[key] = text
+    if cache.rows:
         logger.info("Embedding cache: %d/%d chunks already embedded", len(texts) - len(todo), len(texts))
 
     if todo:
-        cache_file = None
-        if config.EMBED_CACHE:
-            _cache_path().parent.mkdir(parents=True, exist_ok=True)
-            cache_file = _cache_path().open("a", encoding="utf-8")
-
         batch_size = max(1, config.EMBED_BATCH_SIZE)
-        batches = [todo[i : i + batch_size] for i in range(0, len(todo), batch_size)]
+        items = list(todo.items())
+        batches = [items[i : i + batch_size] for i in range(0, len(items), batch_size)]
 
         iterator = batches
         if show_progress:
@@ -168,31 +284,34 @@ def build_index(chunks: list[Document], show_progress: bool = True) -> FAISS:
                 pass
 
         limiter = _RateLimiter(config.EMBED_RPM)
-        try:
-            for batch in iterator:
-                for text, vector in zip(batch, _embed_with_retry(embeddings, batch, limiter)):
-                    cache[_text_key(text)] = vector
-                    if cache_file:
-                        cache_file.write(json.dumps({"k": _text_key(text), "v": vector}) + "\n")
-                if cache_file:
-                    cache_file.flush()  # survive a kill between batches
-        finally:
-            if cache_file:
-                cache_file.close()
+        for batch in iterator:
+            vectors = _embed_with_retry(embeddings, [text for _, text in batch], limiter)
+            cache.add([key for key, _ in batch], np.asarray(vectors, dtype=np.float32))
 
-    vectors = [cache[_text_key(t)] for t in texts]
+    index = faiss.IndexFlatL2(cache.dim)
+    for i in range(0, len(keys), _ADD_BLOCK):
+        index.add(cache.get(keys[i : i + _ADD_BLOCK]))
 
-    if len(vectors) != len(texts):
-        raise RuntimeError(f"Embedded {len(vectors)} vectors for {len(texts)} chunks")
-
-    return FAISS.from_embeddings(
-        text_embeddings=list(zip(texts, vectors)),
-        embedding=embeddings,
-        metadatas=metadatas,
+    ids = [str(uuid.uuid4()) for _ in chunks]
+    docstore = InMemoryDocstore(
+        {id_: Document(id=id_, page_content=c.page_content, metadata=c.metadata) for id_, c in zip(ids, chunks)}
+    )
+    # Same construction FAISS.from_embeddings performs (flat L2 index,
+    # uuid-keyed docstore), minus its full float64 copy of every vector.
+    return FAISS(
+        embedding_function=embeddings,
+        index=index,
+        docstore=docstore,
+        index_to_docstore_id=dict(enumerate(ids)),
     )
 
 
-def save_index(store: FAISS, chunks: list[Document], index_dir: str | None = None) -> Path:
+def save_index(
+    store: FAISS,
+    chunks: list[Document],
+    index_dir: str | None = None,
+    corpus: dict | None = None,
+) -> Path:
     path = Path(index_dir or config.INDEX_DIR)
     path.mkdir(parents=True, exist_ok=True)
     store.save_local(str(path))
@@ -201,21 +320,19 @@ def save_index(store: FAISS, chunks: list[Document], index_dir: str | None = Non
         for chunk in chunks:
             fh.write(json.dumps({"text": chunk.page_content, "metadata": chunk.metadata}) + "\n")
 
-    (path / META_FILE).write_text(
-        json.dumps(
-            {
-                "embed_provider": config.EMBED_PROVIDER,
-                "chat_provider": config.PROVIDER,
-                "embedding_model": config.EMBEDDING_MODEL,
-                "chunk_size": config.CHUNK_SIZE,
-                "chunk_overlap": config.CHUNK_OVERLAP,
-                "chunk_count": len(chunks),
-                "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    meta = {
+        "embed_provider": config.EMBED_PROVIDER,
+        "chat_provider": config.PROVIDER,
+        "embedding_model": config.EMBEDDING_MODEL,
+        "chunk_size": config.CHUNK_SIZE,
+        "chunk_overlap": config.CHUNK_OVERLAP,
+        "header_mode": config.HEADER_MODE,
+        "chunk_count": len(chunks),
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    if corpus:
+        meta["corpus"] = corpus
+    (path / META_FILE).write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return path
 
 

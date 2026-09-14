@@ -5,10 +5,15 @@
 venv/
 __pycache__/
 *.py[cod]
+.cache/
+.embed_cache/
+models/
 faiss_index/
-data/*
-!data/samples/
+data/
+bench/
 eval/results/
+examples/
+deploy/
 README.md
 Dockerfile
 docker-compose.yml

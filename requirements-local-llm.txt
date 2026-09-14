@@ -1,0 +1,8 @@
+# Optional: fully offline chat (LLM_PROVIDER=local) on llama.cpp.
+# Not needed for the default OpenAI setup, and not installed in the Docker image.
+#
+# Prebuilt CPU wheel avoids a source build (which fails on Windows due to
+# MAX_PATH, and on slim images for lack of a compiler):
+#   pip install -r requirements-local-llm.txt --only-binary :all: --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.3.0          # chat: Qwen2.5-3B-Instruct Q4_K_M (GGUF)
+huggingface-hub>=0.24.0          # scripts/fetch_local_model.py

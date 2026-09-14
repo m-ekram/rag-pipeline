@@ -2,7 +2,10 @@
 
     python -m eval.evaluate --compare          # baseline vs tuned, side by side
     python -m eval.evaluate --config tuned     # just the shipping config
+    python -m eval.evaluate --ablate           # isolate chunking and retrieval components
     python -m eval.evaluate --sweep            # grid over chunk sizes
+    python -m eval.evaluate --validate         # is every question even answerable?
+    python -m eval.evaluate --compare --embed openai:text-embedding-3-small --save
 
 Metrics, all computed at k = TOP_K:
   hit_rate   fraction of questions where >=1 relevant chunk made the top k.
@@ -17,14 +20,22 @@ A chunk counts as relevant when its source file is listed for the question and,
 when `must_contain` is given, the chunk text actually contains one of those
 strings. That second condition is what stops a 40-page PDF scoring a hit just
 for being the right file.
+
+`--save` writes JSON to eval/results/ with the git commit, the golden set's
+hash and the embedding model, so every number quoted in the README can be
+traced to the run that produced it.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import platform
+import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import yaml
@@ -33,6 +44,7 @@ from langchain_core.documents import Document
 import config
 from app.chunking import naive_split, stats, structured_split
 from app.loaders import load_directory
+from app.providers import embedding_name, get_embeddings
 from app.retriever import build_retriever, dense_only_retriever
 from app.store import build_index
 
@@ -40,87 +52,68 @@ QUESTIONS_FILE = Path(__file__).parent / "questions.yaml"
 RESULTS_DIR = Path(__file__).parent / "results"
 
 # The two ends of the tuning story: what you start with, and what you ship.
+# "tuned" reads the shipping defaults from config, so it cannot drift from
+# what the API actually serves.
 CONFIGS = {
     "baseline": {
-        "label": "fixed-width chunks, no overlap, dense-only top-k",
+        "label": "fixed-width chunks, no overlap, no headers, dense-only top-k",
         "splitter": "naive",
         "chunk_size": 1000,
         "chunk_overlap": 0,
-        "headers": False,
+        "header_mode": "none",
         "hybrid": False,
-        "mmr": False,
+        "mmr_lambda": None,
+        "rerank": False,
     },
     "tuned": {
-        "label": "structure-aware chunks + overlap + headers, hybrid BM25/dense, MMR off",
+        "label": (
+            f"structure-aware chunks + overlap + '{config.HEADER_MODE}' headers, "
+            f"{'hybrid BM25/dense' if config.USE_HYBRID else 'dense'}"
+            f"{', cross-encoder rerank' if config.RERANK else ''}"
+        ),
         "splitter": "structured",
         "chunk_size": config.CHUNK_SIZE,
         "chunk_overlap": config.CHUNK_OVERLAP,
-        "headers": True,
-        "hybrid": True,
-        "mmr": True,
+        "header_mode": config.HEADER_MODE,
+        "hybrid": config.USE_HYBRID,
+        "mmr_lambda": config.MMR_LAMBDA,
+        "rerank": config.RERANK,
     },
 }
 
+# Chunking ablations: each needs its own index (different chunk text means
+# different vectors), and all share the shipping retriever.
+CHUNK_ABLATIONS = {
+    "headers:none": {"header_mode": "none"},
+    "headers:title": {"header_mode": "title"},
+    "headers:path": {"header_mode": "path"},
+}
 
 # Retrieval ablations. All share the tuned chunk set, so the embedding cost is
 # paid once and each variant differs only in how candidates are ranked. This is
 # what separates "hybrid helps" from "we changed five things and it moved".
-ABLATIONS = {
-    "dense-only": {"hybrid": False, "mmr": False},
-    "dense+mmr": {"hybrid": False, "mmr": True},
-    "hybrid": {"hybrid": True, "mmr": False},
-    "hybrid+mmr": {"hybrid": True, "mmr": True},
-    "hybrid+mmr(l=0.8)": {"hybrid": True, "mmr": True, "lambda": 0.8},
-    "hybrid+mmr(l=1.0)": {"hybrid": True, "mmr": True, "lambda": 1.0},
-    "sparse-heavy": {"hybrid": True, "mmr": True, "weights": (0.4, 0.6)},
+RETRIEVAL_ABLATIONS = {
+    "dense-only": {"hybrid": False, "mmr_lambda": None, "rerank": False},
+    "dense+mmr(0.5)": {"hybrid": False, "mmr_lambda": 0.5, "rerank": False},
+    "hybrid": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False},
+    "hybrid+mmr(0.5)": {"hybrid": True, "mmr_lambda": 0.5, "rerank": False},
+    "sparse-heavy": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "weights": (0.4, 0.6)},
+    "dense+rerank": {"hybrid": False, "mmr_lambda": 1.0, "rerank": True},
+    "hybrid+rerank": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True},
 }
 
 
-def run_ablations(docs: list[Document], questions: list[dict], k: int) -> list[dict]:
-    """Vary only the retriever; chunks and vectors are built once and reused."""
-    chunks = build_chunks(docs, CONFIGS["tuned"])
-    print(f"\nBuilding shared index: {len(chunks)} chunks (embedded once, reused by every variant)")
-    store = build_index(chunks, show_progress=False)
-
-    results = []
-    original = (config.USE_HYBRID, config.MMR_LAMBDA, config.HYBRID_WEIGHTS)
+@contextmanager
+def overrides(**values):
+    """Temporarily set config attributes; the retriever reads them at build time."""
+    old = {name: getattr(config, name) for name in values}
+    for name, value in values.items():
+        setattr(config, name, value)
     try:
-        for name, spec in ABLATIONS.items():
-            config.USE_HYBRID = spec["hybrid"]
-            config.MMR_LAMBDA = spec.get("lambda", 1.0 if not spec["mmr"] else original[1])
-            config.HYBRID_WEIGHTS = spec.get("weights", original[2])
-            retriever = build_retriever(store, chunks, k) if spec["hybrid"] or spec["mmr"] else dense_only_retriever(store, k)
-
-            hits = 0
-            rr: list[float] = []
-            prec: list[float] = []
-            for q in questions:
-                got = retriever.invoke(q["question"])[:k]
-                flags = [is_relevant(d, q) for d in got]
-                hit = any(flags)
-                hits += hit
-                rank = flags.index(True) + 1 if hit else 0
-                rr.append(1.0 / rank if rank else 0.0)
-                prec.append(sum(flags) / len(flags) if flags else 0.0)
-
-            n = len(questions)
-            results.append(
-                {
-                    "config": name,
-                    "label": str(spec),
-                    "k": k,
-                    "questions": n,
-                    "chunks": len(chunks),
-                    "hit_rate": hits / n,
-                    "mrr": sum(rr) / n,
-                    "precision": sum(prec) / n,
-                    "detail": [],
-                }
-            )
-            print(f"  {name:20} hit@{k} {hits / n:6.1%}  MRR {results[-1]['mrr']:.3f}  P@{k} {results[-1]['precision']:6.1%}")
+        yield
     finally:
-        config.USE_HYBRID, config.MMR_LAMBDA, config.HYBRID_WEIGHTS = original
-    return results
+        for name, value in old.items():
+            setattr(config, name, value)
 
 
 def load_questions() -> list[dict]:
@@ -186,37 +179,34 @@ def build_chunks(docs: list[Document], cfg: dict) -> list[Document]:
         docs,
         chunk_size=cfg["chunk_size"],
         chunk_overlap=cfg["chunk_overlap"],
-        add_headers=cfg["headers"],
+        add_headers=cfg["header_mode"] != "none",
+        header_mode=cfg["header_mode"] if cfg["header_mode"] != "none" else None,
     )
 
 
+def embed_index(chunks: list[Document], embed: tuple[str, str]):
+    provider, model = embed
+    return build_index(chunks, show_progress=False, embeddings=get_embeddings(provider, model), model_name=model)
+
+
 def make_retriever(store, chunks: list[Document], cfg: dict, k: int):
-    if not cfg["hybrid"] and not cfg["mmr"]:
+    if not cfg["hybrid"] and cfg["mmr_lambda"] is None and not cfg["rerank"]:
         return dense_only_retriever(store, k)
-    original_hybrid, original_mmr = config.USE_HYBRID, config.MMR_LAMBDA
-    config.USE_HYBRID = cfg["hybrid"]
-    if not cfg["mmr"]:
-        config.MMR_LAMBDA = 1.0  # lambda=1 makes MMR equivalent to plain similarity
-    try:
+    with overrides(
+        USE_HYBRID=cfg["hybrid"],
+        MMR_LAMBDA=1.0 if cfg["mmr_lambda"] is None else cfg["mmr_lambda"],
+        RERANK=cfg["rerank"],
+        HYBRID_WEIGHTS=cfg.get("weights", config.HYBRID_WEIGHTS),
+    ):
         return build_retriever(store, chunks, k)
-    finally:
-        config.USE_HYBRID, config.MMR_LAMBDA = original_hybrid, original_mmr
 
 
-def run_config(name: str, cfg: dict, docs: list[Document], questions: list[dict], k: int) -> dict:
-    print(f"\n=== {name}: {cfg['label']} ===")
-
-    chunks = build_chunks(docs, cfg)
-    s = stats(chunks)
-    print(f"    {s['count']} chunks (median {s['median_chars']} chars) - embedding...")
-
-    store = build_index(chunks, show_progress=False)
-    retriever = make_retriever(store, chunks, cfg, k)
-
+def score(retriever, questions: list[dict], k: int, verbose: bool = False) -> dict:
     hits = 0
     reciprocal_ranks: list[float] = []
     precisions: list[float] = []
-    per_question: list[dict] = []
+    by_tag: dict[str, list[int]] = {}
+    detail: list[dict] = []
 
     for question in questions:
         retrieved = retriever.invoke(question["question"])[:k]
@@ -227,63 +217,128 @@ def run_config(name: str, cfg: dict, docs: list[Document], questions: list[dict]
         rank = flags.index(True) + 1 if hit else 0
         reciprocal_ranks.append(1.0 / rank if rank else 0.0)
         precisions.append(sum(flags) / len(flags) if flags else 0.0)
+        for tag in question.get("tags", []):
+            by_tag.setdefault(tag, [0, 0])
+            by_tag[tag][0] += hit
+            by_tag[tag][1] += 1
 
-        per_question.append(
+        detail.append(
             {
                 "question": question["question"],
+                "tags": question.get("tags", []),
                 "hit": hit,
                 "first_relevant_rank": rank,
                 "retrieved": [
-                    {
-                        "source": d.metadata.get("source"),
-                        "page": d.metadata.get("page"),
-                        "relevant": f,
-                    }
+                    {"source": d.metadata.get("source"), "section": d.metadata.get("section"), "relevant": f}
                     for d, f in zip(retrieved, flags)
                 ],
             }
         )
-        marker = "HIT " if hit else "MISS"
-        print(f"    {marker} rank={rank or '-':<3} {question['question'][:64]}")
+        if verbose:
+            print(f"    {'HIT ' if hit else 'MISS'} rank={rank or '-':<3} {question['question'][:64]}")
 
     n = len(questions)
-    result = {
-        "config": name,
-        "label": cfg["label"],
+    return {
         "k": k,
         "questions": n,
-        "chunks": s["count"],
+        "hits": hits,
         "hit_rate": hits / n,
         "mrr": sum(reciprocal_ranks) / n,
         "precision": sum(precisions) / n,
-        "detail": per_question,
+        "by_tag": {tag: f"{h}/{t}" for tag, (h, t) in sorted(by_tag.items())},
+        "detail": detail,
     }
+
+
+def run_config(name: str, cfg: dict, docs, questions, k: int, embed: tuple[str, str]) -> dict:
+    embed = embedding_name(*cfg["embed"].split(":", 1)) if cfg.get("embed") else embed
+    print(f"\n=== {name}: {cfg['label']} [{embed[0]}:{embed[1]}] ===")
+
+    chunks = build_chunks(docs, cfg)
+    s = stats(chunks)
+    print(f"    {s['count']} chunks (median {s['median_chars']} chars) - embedding...")
+    store = embed_index(chunks, embed)
+    result = score(make_retriever(store, chunks, cfg, k), questions, k, verbose=True)
+    result = {"config": name, "label": cfg["label"], "embedding": f"{embed[0]}:{embed[1]}", "chunks": s["count"], **result}
     print(
-        f"    -> hit_rate@{k} {result['hit_rate']:.1%} | "
-        f"MRR {result['mrr']:.3f} | precision@{k} {result['precision']:.1%}"
+        f"    -> hit_rate@{k} {result['hit_rate']:.1%} ({result['hits']}/{result['questions']}) | "
+        f"MRR {result['mrr']:.3f} | precision@{k} {result['precision']:.1%} | {result['by_tag']}"
     )
     return result
 
 
+def run_ablations(docs, questions, k: int, embed: tuple[str, str]) -> list[dict]:
+    results = []
+    tuned = CONFIGS["tuned"]
+
+    print("\nChunking variants (each re-embedded; shipping retriever):")
+    for name, spec in CHUNK_ABLATIONS.items():
+        cfg = dict(tuned, **spec)
+        chunks = build_chunks(docs, cfg)
+        store = embed_index(chunks, embed)
+        results.append(_ablation_row(name, spec, chunks, score(make_retriever(store, chunks, cfg, k), questions, k), k))
+
+    chunks = build_chunks(docs, tuned)
+    print(f"\nRetrieval variants (shared index: {len(chunks)} tuned chunks, embedded once):")
+    store = embed_index(chunks, embed)
+    for name, spec in RETRIEVAL_ABLATIONS.items():
+        cfg = dict(tuned, **spec)
+        results.append(_ablation_row(name, spec, chunks, score(make_retriever(store, chunks, cfg, k), questions, k), k))
+    for r in results:
+        r["embedding"] = f"{embed[0]}:{embed[1]}"
+    return results
+
+
+def _ablation_row(name: str, spec: dict, chunks, result: dict, k: int) -> dict:
+    print(
+        f"  {name:18} hit@{k} {result['hit_rate']:6.1%}  MRR {result['mrr']:.3f}  "
+        f"P@{k} {result['precision']:6.1%}  {result['by_tag']}"
+    )
+    return {"config": name, "label": json.dumps(spec, default=str), "chunks": len(chunks), **result}
+
+
 def print_comparison(results: list[dict], k: int) -> None:
-    header = f"{'config':<12}{'chunks':>8}{'hit@' + str(k):>10}{'MRR':>10}{'precision':>12}"
+    header = f"{'config':<18}{'chunks':>8}{'hit@' + str(k):>10}{'MRR':>10}{'precision':>12}"
     print("\n" + "=" * 74)
     print(header)
     print("-" * 74)
     for r in results:
-        print(
-            f"{r['config']:<12}{r['chunks']:>8}{r['hit_rate']:>9.1%}"
-            f"{r['mrr']:>10.3f}{r['precision']:>11.1%}"
-        )
+        print(f"{r['config']:<18}{r['chunks']:>8}{r['hit_rate']:>9.1%}{r['mrr']:>10.3f}{r['precision']:>11.1%}")
     if len(results) >= 2:
         first, last = results[0], results[-1]
-        delta = last["hit_rate"] - first["hit_rate"]
         print("-" * 74)
         print(
-            f"top-{k} retrieval relevance: {first['hit_rate']:.0%} -> {last['hit_rate']:.0%} "
-            f"({delta:+.0%} from {first['config']} to {last['config']})"
+            f"top-{k} retrieval relevance: {first['hit_rate']:.1%} -> {last['hit_rate']:.1%} "
+            f"({(last['hit_rate'] - first['hit_rate']) * 100:+.1f} points, {first['config']} -> {last['config']})"
         )
     print("=" * 74)
+
+
+def provenance(k: int, embed: tuple[str, str], data_dir: str) -> dict:
+    def git(*args: str) -> str:
+        try:
+            return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout.strip()
+        except Exception:
+            return ""
+
+    return {
+        "git_commit": git("rev-parse", "HEAD"),
+        "git_dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
+        "questions_sha1": hashlib.sha1(QUESTIONS_FILE.read_bytes()).hexdigest(),
+        "embedding": f"{embed[0]}:{embed[1]}",
+        "k": k,
+        "data_dir": data_dir,
+        "config": config.summary(),
+        "python": platform.python_version(),
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+
+
+def save(kind: str, results: list[dict], meta: dict) -> None:
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    out = RESULTS_DIR / f"{kind}-{time.strftime('%Y%m%d-%H%M%S')}.json"
+    out.write_text(json.dumps({"meta": meta, "results": results}, indent=2), encoding="utf-8")
+    print(f"\nSaved {out}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -291,7 +346,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", choices=sorted(CONFIGS), help="evaluate a single configuration")
     parser.add_argument("--compare", action="store_true", help="baseline vs tuned (default)")
     parser.add_argument("--sweep", action="store_true", help="grid over chunk sizes and overlaps")
-    parser.add_argument("--ablate", action="store_true", help="isolate each retrieval component")
+    parser.add_argument("--ablate", action="store_true", help="isolate each chunking and retrieval component")
+    parser.add_argument("--embed", help="provider:model for every config, e.g. openai:text-embedding-3-large")
     parser.add_argument("--data-dir", default=config.DATA_DIR)
     parser.add_argument("-k", type=int, default=config.TOP_K)
     parser.add_argument("--save", action="store_true", help="write JSON to eval/results/")
@@ -309,39 +365,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.validate:
         return 1 if validate(docs, questions) else 0
 
-    config.require_embed_key()
+    embed = embedding_name(*args.embed.split(":", 1)) if args.embed else embedding_name()
+    config.require_embed_key(embed[0])
+    meta = provenance(args.k, embed, args.data_dir)
 
     if args.ablate:
-        results = run_ablations(docs, questions, args.k)
-        print_comparison(results, args.k)
+        results = run_ablations(docs, questions, args.k, embed)
         if args.save:
-            RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-            out = RESULTS_DIR / f"ablate-{time.strftime('%Y%m%d-%H%M%S')}.json"
-            out.write_text(json.dumps(results, indent=2), encoding="utf-8")
-            print(f"Saved {out}")
+            save("ablate", results, meta)
         return 0
 
     if args.sweep:
         results = []
         for size, overlap in [(500, 75), (800, 120), (1000, 150), (1500, 225)]:
-            cfg = dict(CONFIGS["tuned"], chunk_size=size, chunk_overlap=overlap)
-            cfg["label"] = f"tuned, chunk={size}/{overlap}"
-            results.append(run_config(f"cs{size}", cfg, docs, questions, args.k))
+            cfg = dict(CONFIGS["tuned"], chunk_size=size, chunk_overlap=overlap, label=f"tuned, chunk={size}/{overlap}")
+            results.append(run_config(f"cs{size}", cfg, docs, questions, args.k, embed))
     elif args.config:
-        results = [run_config(args.config, CONFIGS[args.config], docs, questions, args.k)]
+        results = [run_config(args.config, CONFIGS[args.config], docs, questions, args.k, embed)]
     else:
-        results = [
-            run_config(name, CONFIGS[name], docs, questions, args.k) for name in ("baseline", "tuned")
-        ]
+        results = [run_config(name, CONFIGS[name], docs, questions, args.k, embed) for name in ("baseline", "tuned")]
 
     print_comparison(results, args.k)
-
     if args.save:
-        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-        out = RESULTS_DIR / f"eval-{time.strftime('%Y%m%d-%H%M%S')}.json"
-        out.write_text(json.dumps(results, indent=2), encoding="utf-8")
-        print(f"\nSaved {out}")
-
+        save("sweep" if args.sweep else "eval", results, meta)
     return 0
 
 

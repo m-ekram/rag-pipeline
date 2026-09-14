@@ -1,0 +1,6 @@
+# Benchmark-only dependencies (bench/scale_test.py). Not needed to serve.
+-r requirements.txt
+pytest>=8.0.0
+rank-bm25>=0.2.2                 # reference implementation app/bm25.py is tested against
+psutil>=5.9.0
+reportlab>=4.0.0

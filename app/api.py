@@ -88,6 +88,7 @@ def health() -> dict:
         "embedding_model": config.EMBEDDING_MODEL,
         "top_k": config.TOP_K,
         "hybrid_retrieval": config.USE_HYBRID,
+        "rerank": config.RERANK_MODEL if config.RERANK else None,
         "index": engine.meta if engine else {},
     }
 

@@ -3,12 +3,13 @@ services:
     build: .
     image: rag-doc-qa:latest
     ports:
-      - "8000:8000"
+      - "${HOST_PORT:-8000}:8000"
     env_file:
       - .env
     volumes:
       - ./data:/app/data:ro
       - ./faiss_index:/app/faiss_index
+      - cache:/app/.cache
     restart: unless-stopped
 
   # One-shot ingestion:  docker compose run --rm ingest
@@ -20,5 +21,9 @@ services:
     volumes:
       - ./data:/app/data:ro
       - ./faiss_index:/app/faiss_index
+      - cache:/app/.cache
     command: ["python", "-m", "app.ingest", "--rebuild"]
     profiles: ["tools"]
+
+volumes:
+  cache:
