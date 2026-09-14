@@ -100,6 +100,7 @@ CHUNK_ABLATIONS = {
     "headers:none": {"header_mode": "none"},
     "headers:title": {"header_mode": "title"},
     "headers:path": {"header_mode": "path"},
+    "headers:path-clean": {"header_mode": "path-clean"},
 }
 
 # Retrieval ablations. All share the tuned chunk set, so the embedding cost is

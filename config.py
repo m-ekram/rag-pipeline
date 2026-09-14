@@ -95,10 +95,13 @@ CHUNK_SIZE = _int("CHUNK_SIZE", 1000)
 CHUNK_OVERLAP = _int("CHUNK_OVERLAP", 150)
 MIN_CHUNK_CHARS = _int("MIN_CHUNK_CHARS", 80)  # drop near-empty fragments
 # Contextual header prepended to every chunk before embedding:
-#   "path"   section breadcrumb, e.g. [Request Files > What is UploadFile]
-#   "title"  document title only, e.g. [tutorial request files]
-#   "none"   no header
+#   "path"        title + section breadcrumb, e.g. [tutorial request files > Request Files > UploadFile]
+#   "path-clean"  breadcrumb minus headings that recur across documents ("Recap", "Check it")
+#   "title"       document title only, e.g. [tutorial request files]
+#   "none"        no header
 HEADER_MODE = os.getenv("HEADER_MODE", "path").strip().lower()
+# path-clean: a heading found in at least this many documents is boilerplate.
+BOILERPLATE_HEADING_MIN_DOCS = _int("BOILERPLATE_HEADING_MIN_DOCS", 3)
 
 # --- retrieval ----------------------------------------------------------------
 TOP_K = _int("TOP_K", 5)  # chunks handed to the LLM

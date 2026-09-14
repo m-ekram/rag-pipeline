@@ -8,10 +8,19 @@ Two are implemented on purpose:
                    contextual header on every chunk. This is what ships.
 
 The contextual header is prepended to each chunk's text so the embedding, and
-BM25, both see where a fragment sits. In "path" mode it is the section
-breadcrumb - "[tutorial request files > Request Files > File Parameters with
-UploadFile]" - rather than only the file title: a chunk that says "the timeout
-is 30s" is ambiguous on its own and unambiguous with its heading attached.
+BM25, both see where a fragment sits. Header modes:
+
+  path        document title + section breadcrumb:
+              [tutorial request files > Request Files > File Parameters with UploadFile]
+  path-clean  the breadcrumb with boilerplate headings removed. A heading that
+              recurs across many documents ("Recap", "Check it", "Technical
+              Details") says nothing about *this* chunk, but it is literal text
+              a query can match - "how do I check my endpoints work" pulls in
+              every "Check it" section. Which headings count as boilerplate is
+              measured from the corpus (document frequency), not hand-listed.
+              Markdown breadcrumbs start at the page's own H1 title.
+  title       document title only.
+  none        no header.
 
 PDFs arrive one Document per page. structured_split re-joins a PDF's pages
 before splitting so an answer that runs across a page break stays in one
@@ -23,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import re
 from bisect import bisect_right
+from collections import Counter
 
 from langchain_core.documents import Document
 from langchain_text_splitters import CharacterTextSplitter, RecursiveCharacterTextSplitter
@@ -42,10 +52,11 @@ SEPARATORS = [
     "",
 ]
 
-HEADER_MODES = {"path", "title", "none"}
+HEADER_MODES = {"path", "path-clean", "title", "none"}
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.+?)\s*#*\s*$")
 _FENCE = re.compile(r"^\s*(```|~~~)")
+_CRUMB = " > "
 # A page break is joined as a *line* break, not a paragraph break: the splitter
 # treats "\n\n" as a boundary it splits on before anything finer, which would
 # turn every page edge back into a hard chunk edge.
@@ -61,7 +72,11 @@ def _header(meta: dict, mode: str) -> str:
     title = meta.get("title") or meta.get("source", "")
     label = title
     if mode == "path" and meta.get("section"):
-        label = f"{title} > {meta['section']}"
+        label = f"{title}{_CRUMB}{meta['section']}"
+    elif mode == "path-clean" and meta.get("header_path"):
+        # Markdown breadcrumbs already start at the page's H1; PDF outline
+        # paths do not, so the document title leads.
+        label = meta["header_path"] if meta.get("page") is None else f"{title}{_CRUMB}{meta['header_path']}"
     page = meta.get("page")
     return f"[{label} - p.{page}]" if page else f"[{label}]"
 
@@ -83,6 +98,7 @@ def _finalise(chunks: list[Document], header_mode: str) -> list[Document]:
         meta["char_count"] = len(text)
 
         content = f"{_header(meta, header_mode)}\n{text}" if header_mode != "none" else text
+        meta.pop("header_path", None)  # only needed to build the header
         out.append(Document(page_content=content, metadata=meta))
     return out
 
@@ -106,7 +122,7 @@ def _heading_index(text: str) -> tuple[list[int], list[str]]:
                 level = len(match.group(1))
                 stack = stack[: level - 1] + [match.group(2).strip()]
                 offsets.append(pos)
-                paths.append(" > ".join(stack))
+                paths.append(_CRUMB.join(stack))
         pos += len(line)
     return offsets, paths
 
@@ -144,6 +160,23 @@ def _merge_pdf_pages(docs: list[Document]) -> list[Document]:
     return out
 
 
+def boilerplate_headings(section_paths_by_doc: list[set[str]], min_docs: int | None = None) -> set[str]:
+    """Headings (lower-cased) that recur in at least `min_docs` documents.
+
+    The first breadcrumb element is the page's own title and is never counted.
+    """
+    min_docs = min_docs or config.BOILERPLATE_HEADING_MIN_DOCS
+    counts: Counter[str] = Counter()
+    for paths in section_paths_by_doc:
+        counts.update({part.lower() for path in paths for part in path.split(_CRUMB)[1:]})
+    return {heading for heading, n in counts.items() if n >= min_docs}
+
+
+def _clean_path(section: str, boilerplate: set[str]) -> str:
+    parts = section.split(_CRUMB)
+    return _CRUMB.join(parts[:1] + [p for p in parts[1:] if p.lower() not in boilerplate])
+
+
 def structured_split(
     docs: list[Document],
     chunk_size: int | None = None,
@@ -164,29 +197,42 @@ def structured_split(
         add_start_index=True,
     )
 
-    pieces: list[Document] = []
-    for doc in _merge_pdf_pages(docs):
+    # Pass 1: structure of every document (page map for PDFs, heading index for
+    # text), which also gives the corpus-wide heading frequencies.
+    merged = _merge_pdf_pages(docs)
+    structure = []
+    for doc in merged:
         meta = dict(doc.metadata)
         page_starts = meta.pop("_page_starts", None)
         if page_starts:
-            page_offsets = [p[0] for p in page_starts]
+            structure.append((doc, meta, page_starts, [p[0] for p in page_starts], None))
         else:
-            head_offsets, head_paths = _heading_index(doc.page_content)
+            structure.append((doc, meta, None, *_heading_index(doc.page_content)))
+    boilerplate: set[str] = set()
+    if mode == "path-clean":
+        boilerplate = boilerplate_headings(
+            [{p[2] for p in s[2] if p[2]} if s[2] else set(s[4]) for s in structure]
+        )
 
+    # Pass 2: split, and map each chunk to its page or section.
+    pieces: list[Document] = []
+    for doc, meta, page_starts, offsets, paths in structure:
         for piece in splitter.split_documents([Document(page_content=doc.page_content, metadata=meta)]):
             start = max(0, piece.metadata.pop("start_index", 0))
             if page_starts:
-                first = page_starts[max(0, bisect_right(page_offsets, start) - 1)]
-                last = page_starts[max(0, bisect_right(page_offsets, start + len(piece.page_content) - 1) - 1)]
+                first = page_starts[max(0, bisect_right(offsets, start) - 1)]
+                last = page_starts[max(0, bisect_right(offsets, start + len(piece.page_content) - 1) - 1)]
                 piece.metadata["page"] = first[1]
                 if last[1] != first[1]:
                     piece.metadata["page_end"] = last[1]
-                if first[2]:
-                    piece.metadata["section"] = first[2]
+                section = first[2]
             else:
-                i = bisect_right(head_offsets, start) - 1
-                if i >= 0:
-                    piece.metadata["section"] = head_paths[i]
+                i = bisect_right(offsets, start) - 1
+                section = paths[i] if i >= 0 else None
+            if section:
+                piece.metadata["section"] = section
+                if mode == "path-clean":
+                    piece.metadata["header_path"] = _clean_path(section, boilerplate)
             pieces.append(piece)
 
     return _finalise(pieces, mode)

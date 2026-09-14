@@ -74,6 +74,27 @@ def test_pdf_pages_merge_and_map_back(monkeypatch):
         assert c.page_content.startswith(f"[M > Ch {c.metadata['page']} - p.{c.metadata['page']}]")
 
 
+def test_path_clean_drops_headings_shared_across_documents(monkeypatch):
+    monkeypatch.setattr(config, "MIN_CHUNK_CHARS", 1)
+    body = "text " * 30
+    # An intro under the H1 keeps each "##" section in its own chunk; otherwise
+    # the splitter merges the H1 line into the first section's chunk.
+    docs = [
+        Document(
+            page_content=f"# Page {i}\n{body}\n\n## Unique {i}\n{body}\n\n## Recap\n{body}",
+            metadata={"source": f"p{i}.md", "title": f"file {i}"},
+        )
+        for i in range(3)
+    ]
+    chunks = structured_split(docs, chunk_size=200, chunk_overlap=0, header_mode="path-clean")
+    headers = {c.page_content.split("\n", 1)[0] for c in chunks if c.metadata["source"] == "p0.md"}
+
+    assert "[Page 0 > Unique 0]" in headers      # distinctive heading kept
+    assert "[Page 0]" in headers                 # "Recap" (in 3 docs) dropped
+    assert not any("Recap" in h for h in headers)
+    assert any(c.metadata.get("section") == "Page 0 > Recap" for c in chunks)  # citation keeps it
+
+
 def test_fast_bm25_matches_rank_bm25():
     import random
 
