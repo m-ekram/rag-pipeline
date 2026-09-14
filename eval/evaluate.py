@@ -84,7 +84,7 @@ CONFIGS = {
     "tuned": {
         "label": (
             f"structure-aware chunks + overlap + '{config.HEADER_MODE}' headers, "
-            f"{'hybrid BM25/dense' if config.USE_HYBRID else 'dense'}"
+            f"{f'hybrid {config.SPARSE.upper()}/dense' if config.USE_HYBRID else 'dense'}"
             f"{', cross-encoder rerank' if config.RERANK else ''}"
         ),
         "splitter": "structured",
@@ -126,6 +126,7 @@ RETRIEVAL_ABLATIONS = {
     "hybrid+colbert+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _COLBERT, "rerank_fusion": True},
     "hybrid+minilm+fusion": {"hybrid": True, "mmr_lambda": 1.0, "rerank": True, "rerank_model": _MINILM, "rerank_fusion": True},
     "hybrid-splade": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "sparse": "splade"},
+    "hybrid-bm25": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "sparse": "bm25"},
 }
 
 

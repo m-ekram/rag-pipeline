@@ -37,7 +37,9 @@ EMBED_PROVIDER = os.getenv("EMBED_PROVIDER", PROVIDER).strip().lower()
 
 _DEFAULT_MODELS = {
     "openai": ("gpt-4o-mini", "text-embedding-3-small"),
-    "local": ("models/qwen2.5-3b-instruct-q4_k_m.gguf", "BAAI/bge-small-en-v1.5"),
+    # Embedding chosen on the dev set: with SPLADE it gave the best ranking
+    # measured (MRR 0.829, hit@1 78%, eval-dev-20260914-154243.json).
+    "local": ("models/qwen2.5-3b-instruct-q4_k_m.gguf", "snowflake/snowflake-arctic-embed-m"),
     "google": ("gemini-flash-latest", "models/gemini-embedding-001"),
     # Deterministic hash-seeded vectors: no model, no network. Used by the scale
     # benchmark to exercise everything except embedding quality.
@@ -128,9 +130,11 @@ RERANK_FETCH_K = _int("RERANK_FETCH_K", 30)
 # Order by reciprocal rank fusion of first-stage and re-ranker ranks, rather
 # than the re-ranker's order alone.
 RERANK_FUSION = _bool("RERANK_FUSION", True)
-# Lexical leg of hybrid retrieval: "bm25", or "splade" (learned sparse: weights
-# terms a passage implies but does not contain; costs a model pass per chunk).
-SPARSE = os.getenv("SPARSE", "bm25").strip().lower()
+# Lexical leg of hybrid retrieval: "splade" (learned sparse: weights terms a
+# passage implies but does not contain) or "bm25". SPLADE ranked better on the
+# dev set but costs a model pass per chunk at ingest; for very large corpora on
+# CPU, SPARSE=bm25 ingests orders of magnitude faster.
+SPARSE = os.getenv("SPARSE", "splade").strip().lower()
 SPARSE_MODEL = os.getenv("SPARSE_MODEL", "prithivida/Splade_PP_en_v1")
 
 # --- ingestion: embedding -----------------------------------------------------

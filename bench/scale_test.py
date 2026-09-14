@@ -193,6 +193,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-pdf", action="store_true", help="markdown instead of PDFs (skips extraction)")
     parser.add_argument("--embedding", choices=["fake", "openai"], default="fake")
     parser.add_argument("--rerank", action="store_true", help="include the cross-encoder stage in query latency")
+    parser.add_argument(
+        "--sparse",
+        choices=["bm25", "splade"],
+        default="bm25",
+        help="lexical leg (default bm25: SPLADE is a model pass per chunk, hours at 12k pages on CPU)",
+    )
     parser.add_argument("--workers", type=int, default=None, help="loader processes (default: auto)")
     parser.add_argument("--source-dir", default=config.DATA_DIR, help="markdown to sample page text from")
     parser.add_argument("--corpus-dir", default=str(HERE / ".corpus"))
@@ -211,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
     config.EMBED_RPM = 0
     config.EMBED_BATCH_SIZE = 256 if args.embedding == "fake" else 100
     config.RERANK = args.rerank
+    config.SPARSE = args.sparse
     if args.embedding == "fake":
         from langchain_core.embeddings import DeterministicFakeEmbedding
 
