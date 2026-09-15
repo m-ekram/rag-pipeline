@@ -163,7 +163,7 @@ queries. By default the vectors are deterministic 1536-d stand-ins (the size of
 embedding costs nothing. Page text is sampled from the FastAPI docs, so token
 statistics look like documentation.
 
-| 12,000 PDF pages (24 files) | before (`f68f9a25`) | after (`3e6b116e`) |
+| 12,000 PDF pages (24 files) | before (`f68f9a25`) | after (`501d31a5`) |
 |---|---|---|
 | chunks | 48,481 | 44,517 |
 | ingest: load + chunk + embed + index + save | 216.8 s | 75.6 s |
@@ -236,10 +236,10 @@ There are two question sets, with the same schema:
 - **dev** (`eval/questions.yaml`, 36 questions): tuned against, freely.
 - **held-out** (`eval/questions_heldout.yaml`, 50 questions): pages sampled
   with a fixed seed from pages the dev set never touches, question types
-  assigned before each page was read, frozen in commit `b4a42bf3` *before* any
+  assigned before each page was read, frozen in commit `92c7c904` *before* any
   further tuning, and scored exactly once, after the config was locked.
 
-Results on the locked config (commit `3e6b116e`, local ONNX embeddings, k=5):
+Results on the locked config (commit `501d31a5`, local ONNX embeddings, k=5):
 
 | set | config | hit@5 | 95% CI | hit@1 | MRR | exact | paraphrase | multihop |
 |---|---|---|---|---|---|---|---|---|
