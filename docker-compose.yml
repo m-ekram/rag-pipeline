@@ -40,6 +40,9 @@ services:
     environment:
       EMBED_PROVIDER: local
       PYTHONWARNINGS: ignore
+      # Provenance for saved eval runs; set on the host before `docker compose run`.
+      EVAL_GIT_COMMIT: ${EVAL_GIT_COMMIT:-}
+      EVAL_GIT_DIRTY: ${EVAL_GIT_DIRTY:-}
     profiles: ["tools"]
 
 volumes:

@@ -54,6 +54,7 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import platform
 import re
 import statistics
@@ -620,9 +621,19 @@ def provenance(k: int, embed: tuple[str, str], data_dir: str, question_paths: li
         except Exception:
             return ""
 
+    # Inside the dev container git may not resolve the repository (a worktree's
+    # .git file points at a host path), so the host can pass the facts in:
+    #   EVAL_GIT_COMMIT=$(git rev-parse HEAD) EVAL_GIT_DIRTY=$(git status --porcelain --untracked-files=no | wc -l)
+    commit = os.getenv("EVAL_GIT_COMMIT") or git("rev-parse", "HEAD")
+    dirty_env = os.getenv("EVAL_GIT_DIRTY")
+    dirty = dirty_env.strip() not in {"", "0", "false"} if dirty_env is not None else bool(
+        git("status", "--porcelain", "--untracked-files=no")
+    )
+    if not commit:
+        print("warning: git commit unknown - pass EVAL_GIT_COMMIT when running in a container", file=sys.stderr)
     return {
-        "git_commit": git("rev-parse", "HEAD"),
-        "git_dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
+        "git_commit": commit,
+        "git_dirty": dirty,
         "questions_file": ", ".join(p.name for p in question_paths),
         "questions_sha1": {p.name: hashlib.sha1(p.read_bytes()).hexdigest() for p in question_paths},
         "embedding": f"{embed[0]}:{embed[1]}",
