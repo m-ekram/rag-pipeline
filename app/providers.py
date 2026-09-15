@@ -50,7 +50,7 @@ class FastEmbedEmbeddings(Embeddings):
         self._normalize = normalize
 
     def _encode(self, texts: list[str]) -> list[list[float]]:
-        vectors = np.asarray(list(self._model.embed(texts, batch_size=64)), dtype=np.float32)
+        vectors = np.asarray(list(self._model.embed(texts, batch_size=config.LOCAL_BATCH_SIZE)), dtype=np.float32)
         if self._normalize:
             vectors /= np.linalg.norm(vectors, axis=1, keepdims=True).clip(min=1e-12)
         return vectors.tolist()

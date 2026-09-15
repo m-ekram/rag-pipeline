@@ -58,6 +58,10 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", default_embedding_model(EMBED_PRO
 # a fraction of the install size, and it loads on machines whose application
 # control policy blocks torch's unsigned DLLs.
 MODEL_CACHE_DIR = os.getenv("MODEL_CACHE_DIR", ".cache/models")
+# Texts per ONNX forward pass for local encoders (dense and SPLADE). Peak memory
+# grows with batch x sequence^2; at 32-64 an index build (arctic + SPLADE)
+# exceeded an 8 GB Docker VM. 16 keeps it well inside that at little speed cost.
+LOCAL_BATCH_SIZE = _int("LOCAL_BATCH_SIZE", 16)
 EMBED_NORMALIZE = _bool("EMBED_NORMALIZE", True)
 # BGE v1.5 is trained with this instruction on the *query* side only; passages
 # are embedded bare. Leaving it off costs retrieval quality on short questions.

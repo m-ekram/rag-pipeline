@@ -77,7 +77,7 @@ class SparseEncoder:
             try:
                 for start in range(0, len(todo), 64):
                     batch = todo[start : start + 64]
-                    for (key, _), vector in zip(batch, self._model.embed([t for _, t in batch], batch_size=32)):
+                    for (key, _), vector in zip(batch, self._model.embed([t for _, t in batch], batch_size=config.LOCAL_BATCH_SIZE)):
                         indices = np.asarray(vector.indices, dtype=np.int64)
                         values = np.asarray(vector.values, dtype=np.float32)
                         cache[key] = (indices, values)
