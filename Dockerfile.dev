@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# Development / evaluation image: the same Python stack as the service image,
+# plus the eval, benchmark and test tooling. The repository is bind-mounted at
+# /work (see the `dev` service in docker-compose.yml), so code edits, the
+# embedding cache, downloaded models and eval/results/ all live on the host.
+#
+#   docker compose build dev
+#   docker compose run --rm dev python -m pytest tests -q
+#   docker compose run --rm dev python -m eval.evaluate --compare
+#
+# Useful where the host cannot load the native wheels (e.g. Windows Smart App
+# Control blocking unsigned .pyd files): everything runs inside Linux.
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    HF_HUB_DISABLE_SYMLINKS_WARNING=1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    # The repo is mounted from the host: trust it, and compare line endings the
+    # way a Windows checkout stores them, so provenance's "dirty" check is true.
+    && git config --system safe.directory '*' \
+    && git config --system core.autocrlf true
+
+WORKDIR /work
+COPY requirements.txt requirements-dev.txt ./
+# Generous timeout and retries: the wheels are large (onnxruntime, faiss) and
+# a slow or shared connection otherwise fails the whole build on one read.
+RUN pip install --no-cache-dir --default-timeout=120 --retries 10 -r requirements-dev.txt onnxruntime-genai
+
+CMD ["python", "-m", "pytest", "tests", "-q"]

@@ -29,6 +29,7 @@ from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict, Field
 
 import config
+from app.doc2query import indexed_text
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +110,9 @@ class SpladeRetriever(BaseRetriever):
     def from_documents(cls, documents: Iterable[Document], encoder: Any = None, **kwargs) -> "SpladeRetriever":
         docs = list(documents)
         encoder = encoder or get_sparse_encoder()
-        return cls.from_vectors(docs, encoder.encode_documents([d.page_content for d in docs]), encoder, **kwargs)
+        # Chunk text plus any doc2query expansion; the returned documents keep
+        # their original page_content.
+        return cls.from_vectors(docs, encoder.encode_documents([indexed_text(d) for d in docs]), encoder, **kwargs)
 
     @classmethod
     def from_vectors(cls, docs: list[Document], vectors: list[SparseVector], encoder: Any, **kwargs) -> "SpladeRetriever":

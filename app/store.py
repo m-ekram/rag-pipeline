@@ -19,6 +19,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 
 import config
+from app.doc2query import indexed_text
 from app.providers import get_embeddings
 
 logger = logging.getLogger(__name__)
@@ -239,6 +240,11 @@ class EmbedCache:
         return np.asarray(matrix[rows], dtype=np.float32)
 
 
+def _public_meta(meta: dict) -> dict:
+    """Metadata as stored and served: embed_text is an indexing detail only."""
+    return {k: v for k, v in meta.items() if k != "embed_text"}
+
+
 def build_index(
     chunks: list[Document],
     show_progress: bool = True,
@@ -258,7 +264,10 @@ def build_index(
         model_name = model_name or config.EMBEDDING_MODEL
     model_name = model_name or getattr(embeddings, "model", None) or getattr(embeddings, "model_name", "unknown")
 
-    texts = [c.page_content for c in chunks]
+    # The dense vector may be built from a different text than the chunk shows:
+    # the body without its header (HEADER_TARGET=sparse) and/or with generated
+    # questions appended (DOC2QUERY). The cache keys on what was embedded.
+    texts = [indexed_text(c, base=c.metadata.get("embed_text", c.page_content)) for c in chunks]
     keys = [_text_key(t) for t in texts]
     cache = EmbedCache(model_name, enabled=config.EMBED_CACHE)
 
@@ -294,7 +303,7 @@ def build_index(
 
     ids = [str(uuid.uuid4()) for _ in chunks]
     docstore = InMemoryDocstore(
-        {id_: Document(id=id_, page_content=c.page_content, metadata=c.metadata) for id_, c in zip(ids, chunks)}
+        {id_: Document(id=id_, page_content=c.page_content, metadata=_public_meta(c.metadata)) for id_, c in zip(ids, chunks)}
     )
     # Same construction FAISS.from_embeddings performs (flat L2 index,
     # uuid-keyed docstore), minus its full float64 copy of every vector.
@@ -318,7 +327,7 @@ def save_index(
 
     with (path / CHUNKS_FILE).open("w", encoding="utf-8") as fh:
         for chunk in chunks:
-            fh.write(json.dumps({"text": chunk.page_content, "metadata": chunk.metadata}) + "\n")
+            fh.write(json.dumps({"text": chunk.page_content, "metadata": _public_meta(chunk.metadata)}) + "\n")
 
     meta = {
         "embed_provider": config.EMBED_PROVIDER,

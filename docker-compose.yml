@@ -5,7 +5,8 @@ services:
     ports:
       - "${HOST_PORT:-8000}:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - ./data:/app/data:ro
       - ./faiss_index:/app/faiss_index
@@ -17,12 +18,28 @@ services:
     build: .
     image: rag-doc-qa:latest
     env_file:
-      - .env
+      - path: .env
+        required: false
     volumes:
       - ./data:/app/data:ro
       - ./faiss_index:/app/faiss_index
       - cache:/app/.cache
     command: ["python", "-m", "app.ingest", "--rebuild"]
+    profiles: ["tools"]
+
+  # Eval / benchmark / tests with the repo mounted:
+  #   docker compose run --rm dev python -m eval.evaluate --compare
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: rag-doc-qa-dev:latest
+    working_dir: /work
+    volumes:
+      - .:/work
+    environment:
+      EMBED_PROVIDER: local
+      PYTHONWARNINGS: ignore
     profiles: ["tools"]
 
 volumes:

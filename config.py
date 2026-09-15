@@ -106,6 +106,12 @@ MIN_CHUNK_CHARS = _int("MIN_CHUNK_CHARS", 80)  # drop near-empty fragments
 HEADER_MODE = os.getenv("HEADER_MODE", "path-clean").strip().lower()
 # path-clean: a heading found in at least this many documents is boilerplate.
 BOILERPLATE_HEADING_MIN_DOCS = _int("BOILERPLATE_HEADING_MIN_DOCS", 3)
+# Where the header goes:
+#   "all"     prepended to the chunk for every consumer (dense, lexical, LLM)
+#   "sparse"  dense vectors embed the body only; the lexical leg, the LLM and
+#             citations still see the header. A shared header makes sibling
+#             chunks of one page look alike to the dense leg.
+HEADER_TARGET = os.getenv("HEADER_TARGET", "all").strip().lower()
 
 # --- retrieval ----------------------------------------------------------------
 TOP_K = _int("TOP_K", 5)  # chunks handed to the LLM
@@ -136,6 +142,18 @@ RERANK_FUSION = _bool("RERANK_FUSION", True)
 # CPU, SPARSE=bm25 ingests orders of magnitude faster.
 SPARSE = os.getenv("SPARSE", "splade").strip().lower()
 SPARSE_MODEL = os.getenv("SPARSE_MODEL", "prithivida/Splade_PP_en_v1")
+
+# --- retrieval-side generation (local model on ONNX Runtime) -------------------
+# Never used to write answers; only to expand what is indexed and searched.
+GEN_MODEL_DIR = os.getenv("GEN_MODEL_DIR", "models/phi-onnx/cpu_and_mobile/cpu-int4-awq-block-128-acc-level-4")
+# doc2query: index every chunk with questions it answers (app/doc2query.py).
+# One-time generation per chunk at ingest, cached.
+DOC2QUERY = _bool("DOC2QUERY", False)
+DOC2QUERY_N = _int("DOC2QUERY_N", 3)
+# Query rewriting: paraphrases + a hypothetical passage per question, fused
+# (app/query_rewrite.py). Costs REWRITE_N + 1 generations per live query.
+QUERY_REWRITE = _bool("QUERY_REWRITE", False)
+REWRITE_N = _int("REWRITE_N", 3)
 
 # --- ingestion: embedding -----------------------------------------------------
 # Local embedding has no quota and no per-request overhead, so it wants big

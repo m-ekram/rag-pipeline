@@ -81,7 +81,13 @@ def _header(meta: dict, mode: str) -> str:
     return f"[{label} - p.{page}]" if page else f"[{label}]"
 
 
-def _finalise(chunks: list[Document], header_mode: str) -> list[Document]:
+def _finalise(chunks: list[Document], header_mode: str, header_target: str = "all") -> list[Document]:
+    """Number chunks, drop fragments, and prepend the header.
+
+    header_target="sparse" also stores the header-free body as
+    metadata["embed_text"]: the dense vector is built from that, while the
+    lexical leg, the LLM and citations still see the header in page_content.
+    """
     out: list[Document] = []
     per_source: dict[str, int] = {}
     for chunk in chunks:
@@ -99,6 +105,8 @@ def _finalise(chunks: list[Document], header_mode: str) -> list[Document]:
 
         content = f"{_header(meta, header_mode)}\n{text}" if header_mode != "none" else text
         meta.pop("header_path", None)  # only needed to build the header
+        if header_mode != "none" and header_target == "sparse":
+            meta["embed_text"] = text
         out.append(Document(page_content=content, metadata=meta))
     return out
 
@@ -183,10 +191,14 @@ def structured_split(
     chunk_overlap: int | None = None,
     add_headers: bool = True,
     header_mode: str | None = None,
+    header_target: str | None = None,
 ) -> list[Document]:
     mode = (header_mode or config.HEADER_MODE) if add_headers else "none"
     if mode not in HEADER_MODES:
         raise ValueError(f"header_mode must be one of {sorted(HEADER_MODES)}, got {mode!r}")
+    target = header_target or config.HEADER_TARGET
+    if target not in {"all", "sparse"}:
+        raise ValueError(f"header_target must be 'all' or 'sparse', got {target!r}")
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size or config.CHUNK_SIZE,
@@ -235,7 +247,7 @@ def structured_split(
                     piece.metadata["header_path"] = _clean_path(section, boilerplate)
             pieces.append(piece)
 
-    return _finalise(pieces, mode)
+    return _finalise(pieces, mode, target)
 
 
 def naive_split(

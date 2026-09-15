@@ -124,11 +124,15 @@ def build_retriever(store, chunks: list[Document] | None = None, top_k: int | No
             weights=list(config.HYBRID_WEIGHTS),
         )
 
-    if not config.RERANK:
-        return retriever
+    if config.RERANK:
+        reranker = RankFusionReranker(model=get_cross_encoder(config.RERANK_MODEL), top_n=k, fuse=config.RERANK_FUSION)
+        retriever = _legacy("ContextualCompressionRetriever")(base_compressor=reranker, base_retriever=retriever)
 
-    reranker = RankFusionReranker(model=get_cross_encoder(config.RERANK_MODEL), top_n=k, fuse=config.RERANK_FUSION)
-    return _legacy("ContextualCompressionRetriever")(base_compressor=reranker, base_retriever=retriever)
+    if config.QUERY_REWRITE:
+        from app.query_rewrite import RewriteFusionRetriever
+
+        retriever = RewriteFusionRetriever(base=retriever, k=k)
+    return retriever
 
 
 def dense_only_retriever(store, top_k: int | None = None):

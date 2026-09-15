@@ -24,6 +24,8 @@ from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
 from pydantic import ConfigDict, Field
 
+from app.doc2query import indexed_text
+
 
 def default_preprocess(text: str) -> list[str]:
     """Same tokenisation as LangChain's BM25Retriever default."""
@@ -59,7 +61,7 @@ class FastBM25Retriever(BaseRetriever):
         term_freqs: dict[str, list[int]] = {}
         lengths = []
         for i, doc in enumerate(docs):
-            tokens = preprocess_func(doc.page_content)
+            tokens = preprocess_func(indexed_text(doc))  # chunk text + any doc2query expansion
             lengths.append(len(tokens))
             # Counter preserves first-occurrence order, as rank_bm25's dicts do;
             # that order feeds the idf average, so matching it keeps floats identical.

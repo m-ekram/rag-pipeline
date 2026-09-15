@@ -45,6 +45,11 @@ def main(argv: list[str] | None = None) -> int:
     docs = load_directory(args.data_dir, workers=args.workers)
     corpus = corpus_stats(docs)
     chunks = structured_split(docs, chunk_size=args.chunk_size, chunk_overlap=args.chunk_overlap)
+    if config.DOC2QUERY and not args.dry_run:
+        from app.doc2query import expand_chunks
+
+        print(f"doc2query: generating {config.DOC2QUERY_N} questions per chunk (cached; resumable)...")
+        expand_chunks(chunks)
 
     s = stats(chunks)
     print(

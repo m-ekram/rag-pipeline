@@ -2,23 +2,35 @@
 
     python -m eval.evaluate --compare          # baseline vs tuned, side by side
     python -m eval.evaluate --config tuned     # just the shipping config
-    python -m eval.evaluate --ablate           # isolate chunking and retrieval components
+    python -m eval.evaluate --ablate           # every variant, one at a time
     python -m eval.evaluate --sweep            # grid over chunk sizes
     python -m eval.evaluate --validate         # is every question even answerable?
     python -m eval.evaluate --compare --questions eval/questions_heldout.yaml --save
-    python -m eval.evaluate --diff eval/results/A.json#tuned eval/results/B.json#hybrid+rerank
+    python -m eval.evaluate --ablate --crossval --questions eval/questions.yaml eval/questions_heldout.yaml
+    python -m eval.evaluate --diff eval/results/A.json#tuned eval/results/B.json#hybrid-bm25
     python -m eval.evaluate --compare --embed openai:text-embedding-3-small --save
 
-Two question sets:
-  eval/questions.yaml          dev set - tune against this freely
-  eval/questions_heldout.yaml  held-out set - frozen before tuning, scored once
-                               at the end. The headline number comes from here.
+Question sets:
+  eval/questions.yaml             dev (36) - tuned against since round 1
+  eval/questions_heldout.yaml     held-out v1 (50) - scored once in round 1;
+                                  now part of the round-2 tuning pool
+  eval/questions_heldout_v2.yaml  held-out v2 - frozen after the round-2 lock,
+                                  scored once. The headline number comes from
+                                  whichever held-out set is newest and untouched.
+
+Several files can be passed at once (the "pool"); every result then carries a
+per-set breakdown, so a change that wins by fitting one set is visible.
+
+--crossval (with --ablate over exactly two sets) is the honest estimate of how
+the variant *selection* generalises: pick the best variant on set A and score
+it on set B, then the reverse. Scoring a chosen config on the questions it was
+chosen on is optimistic - in round 1 by 10.9 points (dev 88.9% -> held-out 78.0%).
 
 Metrics, all computed at k = TOP_K:
   hit_rate   fraction of questions where >=1 relevant chunk made the top k.
              This is the "top-5 retrieval relevance" number - if it is low, no
              prompt engineering downstream will save the answer. Reported with
-             a Wilson 95% interval: on 36-50 questions one question moves the
+             a Wilson 95% interval: on 36-60 questions one question moves the
              number 2-3 points, and the interval says so.
   hit@1/@3   same, at ranks 1 and 3 - more sensitive tie-breakers than hit@5.
   mrr        mean reciprocal rank of the first relevant chunk. Rewards putting
@@ -31,8 +43,8 @@ when `must_contain` is given, the chunk text actually contains one of those
 strings. That second condition is what stops a 40-page PDF scoring a hit just
 for being the right file.
 
-`--save` writes JSON to eval/results/ with the git commit, the question set's
-hash and the embedding model, so every number quoted in the README can be
+`--save` writes JSON to eval/results/ with the git commit, the question sets'
+hashes and the embedding model, so every number quoted in the README can be
 traced to the run that produced it.
 """
 
@@ -77,40 +89,55 @@ CONFIGS = {
         "chunk_size": 1000,
         "chunk_overlap": 0,
         "header_mode": "none",
+        "header_target": "all",
         "hybrid": False,
         "mmr_lambda": None,
         "rerank": False,
+        "doc2query": False,
+        "rewrite": False,
     },
     "tuned": {
         "label": (
-            f"structure-aware chunks + overlap + '{config.HEADER_MODE}' headers, "
+            f"structure-aware chunks + overlap + '{config.HEADER_MODE}' headers"
+            f"{' (lexical leg only)' if config.HEADER_TARGET == 'sparse' else ''}, "
             f"{f'hybrid {config.SPARSE.upper()}/dense' if config.USE_HYBRID else 'dense'}"
             f"{', cross-encoder rerank' if config.RERANK else ''}"
+            f"{', doc2query' if config.DOC2QUERY else ''}"
+            f"{', query rewriting' if config.QUERY_REWRITE else ''}"
         ),
         "splitter": "structured",
         "chunk_size": config.CHUNK_SIZE,
         "chunk_overlap": config.CHUNK_OVERLAP,
         "header_mode": config.HEADER_MODE,
+        "header_target": config.HEADER_TARGET,
         "hybrid": config.USE_HYBRID,
         "mmr_lambda": config.MMR_LAMBDA,
         "rerank": config.RERANK,
+        "doc2query": config.DOC2QUERY,
+        "rewrite": config.QUERY_REWRITE,
     },
 }
 
-# Chunking ablations: each needs its own index (different chunk text means
-# different vectors), and all share the shipping retriever.
+# Chunking ablations: different chunk text means different vectors, so each
+# gets its own index.
 CHUNK_ABLATIONS = {
     "headers:none": {"header_mode": "none"},
     "headers:title": {"header_mode": "title"},
     "headers:path": {"header_mode": "path"},
     "headers:path-clean": {"header_mode": "path-clean"},
+    # Round 2: keep the breadcrumb for the lexical leg (and the LLM, and
+    # citations) but embed only the body. On held-out v1, 5 of the tuned
+    # config's 11 misses retrieved the right page but a chunk without the
+    # answer: a shared header makes sibling chunks look alike to the dense leg.
+    "headers:sparse-only": {"header_target": "sparse"},
+    "headers:sparse-only+bge-small": {"header_target": "sparse", "embed": "local:BAAI/bge-small-en-v1.5"},
 }
 
 _BGE_RERANK = "BAAI/bge-reranker-base"
 _COLBERT = "answerdotai/answerai-colbert-small-v1"
 _MINILM = "Xenova/ms-marco-MiniLM-L-6-v2"
 
-# Retrieval ablations. All share the tuned chunk set, so the embedding cost is
+# Retrieval ablations: they share the tuned chunk set, so the embedding cost is
 # paid once and each variant differs only in how candidates are ranked. This is
 # what separates "hybrid helps" from "we changed five things and it moved".
 RETRIEVAL_ABLATIONS = {
@@ -128,6 +155,19 @@ RETRIEVAL_ABLATIONS = {
     "hybrid-splade": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "sparse": "splade"},
     "hybrid-bm25": {"hybrid": True, "mmr_lambda": 1.0, "rerank": False, "sparse": "bm25"},
 }
+
+# Round 2: local generation (Phi-3.5 on ONNX Runtime) aimed at paraphrase
+# misses. doc2query changes what is indexed (its own index); rewriting only
+# changes how the index is queried.
+GENERATION_ABLATIONS = {
+    "doc2query": {"doc2query": True},
+    "rewrite": {"rewrite": True},
+    "doc2query+rewrite": {"doc2query": True, "rewrite": True},
+}
+
+# Every variant --ablate/--only knows about. "tuned" (the shipping config, no
+# overrides) comes first, so on a tie --crossval keeps the incumbent.
+VARIANTS = {"tuned": {}, **CHUNK_ABLATIONS, **RETRIEVAL_ABLATIONS, **GENERATION_ABLATIONS}
 
 
 @contextmanager
@@ -156,6 +196,17 @@ def load_questions(path: Path = QUESTIONS_FILE) -> list[dict]:
     for q in questions:
         if "question" not in q or "relevant_sources" not in q:
             raise SystemExit(f"Malformed entry (needs question + relevant_sources): {q}")
+        q["_set"] = split_name(path)
+    return questions
+
+
+def load_question_sets(paths: list[Path]) -> list[dict]:
+    questions = [q for path in paths for q in load_questions(path)]
+    seen: set[str] = set()
+    for q in questions:
+        if q["question"] in seen:
+            raise SystemExit(f"Duplicate question across sets: {q['question']}")
+        seen.add(q["question"])
     return questions
 
 
@@ -257,13 +308,19 @@ def validate(docs: list[Document], questions: list[dict], strict: bool = False) 
 def build_chunks(docs: list[Document], cfg: dict) -> list[Document]:
     if cfg["splitter"] == "naive":
         return naive_split(docs, chunk_size=cfg["chunk_size"], chunk_overlap=cfg["chunk_overlap"])
-    return structured_split(
+    chunks = structured_split(
         docs,
         chunk_size=cfg["chunk_size"],
         chunk_overlap=cfg["chunk_overlap"],
         add_headers=cfg["header_mode"] != "none",
         header_mode=cfg["header_mode"] if cfg["header_mode"] != "none" else None,
+        header_target=cfg.get("header_target"),
     )
+    if cfg.get("doc2query"):
+        from app.doc2query import expand_chunks
+
+        expand_chunks(chunks)
+    return chunks
 
 
 def embed_index(chunks: list[Document], embed: tuple[str, str]):
@@ -272,12 +329,13 @@ def embed_index(chunks: list[Document], embed: tuple[str, str]):
 
 
 def make_retriever(store, chunks: list[Document], cfg: dict, k: int):
-    if not cfg["hybrid"] and cfg["mmr_lambda"] is None and not cfg["rerank"]:
+    if not cfg["hybrid"] and cfg["mmr_lambda"] is None and not cfg["rerank"] and not cfg.get("rewrite"):
         return dense_only_retriever(store, k)
     with overrides(
         USE_HYBRID=cfg["hybrid"],
         MMR_LAMBDA=1.0 if cfg["mmr_lambda"] is None else cfg["mmr_lambda"],
         RERANK=cfg["rerank"],
+        QUERY_REWRITE=cfg.get("rewrite", False),
         RERANK_MODEL=cfg.get("rerank_model", config.RERANK_MODEL),
         RERANK_FUSION=cfg.get("rerank_fusion", config.RERANK_FUSION),
         SPARSE=cfg.get("sparse", config.SPARSE),
@@ -298,7 +356,7 @@ def depth_report(store, chunks: list[Document], cfg: dict, result: dict, questio
         return
     legs = {"dense": dense_only_retriever(store, depth)}
     if cfg["hybrid"]:
-        legs["bm25"] = build_sparse(chunks).model_copy(update={"k": depth})
+        legs["sparse"] = build_sparse(chunks).model_copy(update={"k": depth})
     legs["pipeline"] = make_retriever(store, chunks, dict(cfg, rerank=False), depth)
     print(f"\n    first relevant rank within top {depth} (0 = absent):")
     print("    " + "".join(f"{name:>10}" for name in legs) + "   question")
@@ -315,6 +373,7 @@ def score(retriever, questions: list[dict], k: int, verbose: bool = False) -> di
     precisions: list[float] = []
     latencies: list[float] = []
     by_tag: dict[str, list[int]] = {}
+    by_set: dict[str, list[int]] = {}
     detail: list[dict] = []
 
     for question in questions:
@@ -330,10 +389,15 @@ def score(retriever, questions: list[dict], k: int, verbose: bool = False) -> di
             by_tag.setdefault(tag, [0, 0])
             by_tag[tag][0] += bool(rank)
             by_tag[tag][1] += 1
+        qset = question.get("_set", "dev")
+        by_set.setdefault(qset, [0, 0])
+        by_set[qset][0] += bool(rank)
+        by_set[qset][1] += 1
 
         detail.append(
             {
                 "question": question["question"],
+                "set": qset,
                 "tags": question.get("tags", []),
                 "hit": bool(rank),
                 "first_relevant_rank": rank,
@@ -365,16 +429,18 @@ def score(retriever, questions: list[dict], k: int, verbose: bool = False) -> di
             "p95": round(latencies[max(0, math.ceil(len(latencies) * 0.95) - 1)], 1),
         },
         "by_tag": {tag: f"{h}/{t}" for tag, (h, t) in sorted(by_tag.items())},
+        "by_set": {qset: f"{h}/{t}" for qset, (h, t) in by_set.items()},
         "detail": detail,
     }
 
 
 def _summary_line(r: dict) -> str:
     lo, hi = r["hit_rate_ci95"]
+    sets = f" | {r['by_set']}" if len(r.get("by_set", {})) > 1 else ""
     return (
         f"hit@{r['k']} {r['hit_rate']:6.1%} ({r['hits']}/{r['questions']}, 95% CI {lo:.0%}-{hi:.0%}) | "
         f"hit@1 {r['hit@1']:.0%} hit@3 {r['hit@3']:.0%} | MRR {r['mrr']:.3f} | P@{r['k']} {r['precision']:.1%} | "
-        f"{r['latency_ms']['mean']:.0f} ms | {r['by_tag']}"
+        f"{r['latency_ms']['mean']:.0f} ms | {r['by_tag']}{sets}"
     )
 
 
@@ -395,38 +461,87 @@ def run_config(name: str, cfg: dict, docs, questions, k: int, embed: tuple[str, 
 
 
 def run_ablations(docs, questions, k: int, embed: tuple[str, str], only: set[str] | None = None) -> list[dict]:
-    """`only` restricts the run to the named variants (all when None)."""
-    results = []
-    tuned = CONFIGS["tuned"]
-    wanted = lambda name: only is None or name in only  # noqa: E731
+    """Run each variant on top of the shipping config.
 
-    if any(wanted(n) for n in CHUNK_ABLATIONS):
-        print("\nChunking variants (each re-embedded; shipping retriever):")
-    for name, spec in CHUNK_ABLATIONS.items():
-        if not wanted(name):
+    An index is built once per distinct (chunking, header placement, embedding)
+    and shared by every variant that needs it; `only` restricts the run to the
+    named variants (all when None).
+    """
+    tuned = CONFIGS["tuned"]
+    built: dict[tuple, tuple[list[Document], object]] = {}
+    results = []
+    for name, spec in VARIANTS.items():
+        if only is not None and name not in only:
             continue
         cfg = dict(tuned, **spec)
-        chunks = build_chunks(docs, cfg)
-        store = embed_index(chunks, embed)
-        results.append(_ablation_row(name, spec, chunks, score(make_retriever(store, chunks, cfg, k), questions, k)))
-
-    retrieval = {n: s for n, s in RETRIEVAL_ABLATIONS.items() if wanted(n)}
-    if not retrieval:
-        return results
-    chunks = build_chunks(docs, tuned)
-    print(f"\nRetrieval variants (shared index: {len(chunks)} tuned chunks, embedded once):")
-    store = embed_index(chunks, embed)
-    for name, spec in retrieval.items():
-        cfg = dict(tuned, **spec)
-        results.append(_ablation_row(name, spec, chunks, score(make_retriever(store, chunks, cfg, k), questions, k)))
-    for r in results:
-        r["embedding"] = f"{embed[0]}:{embed[1]}"
+        emb = embedding_name(*cfg["embed"].split(":", 1)) if cfg.get("embed") else embed
+        key = (
+            cfg["splitter"],
+            cfg["chunk_size"],
+            cfg["chunk_overlap"],
+            cfg["header_mode"],
+            cfg.get("header_target"),
+            bool(cfg.get("doc2query")),
+            emb,
+        )
+        if key not in built:
+            chunks = build_chunks(docs, cfg)
+            built[key] = (chunks, embed_index(chunks, emb))
+        chunks, store = built[key]
+        print(f"  {name:30}", end="", flush=True)
+        result = score(make_retriever(store, chunks, cfg, k), questions, k)
+        print(f" {_summary_line(result)}")
+        results.append(
+            {
+                "config": name,
+                "label": json.dumps(spec, default=str),
+                "embedding": f"{emb[0]}:{emb[1]}",
+                "chunks": len(chunks),
+                **result,
+            }
+        )
     return results
 
 
-def _ablation_row(name: str, spec: dict, chunks, result: dict) -> dict:
-    print(f"  {name:18} {_summary_line(result)}")
-    return {"config": name, "label": json.dumps(spec, default=str), "chunks": len(chunks), **result}
+def _per_set(result: dict, qset: str) -> tuple[int, int, float]:
+    """(hits, questions, MRR) of one question set inside a pooled result."""
+    rows = [d for d in result["detail"] if d.get("set") == qset]
+    hits = sum(1 for d in rows if d["hit"])
+    mrr = sum(1.0 / d["first_relevant_rank"] for d in rows if d["hit"]) / len(rows) if rows else 0.0
+    return hits, len(rows), mrr
+
+
+def crossval(results: list[dict], sets: list[str]) -> dict:
+    """2-fold selection estimate: choose on one set, score on the other.
+
+    Selection is by hits, then MRR, on the choosing set only; ties go to the
+    earlier variant (the incumbent "tuned" is listed first). The honest estimate
+    pools the two out-of-fold scores - neither was seen by the choice it scores.
+    """
+    if len(sets) != 2:
+        raise SystemExit(f"--crossval needs exactly two question sets, got {sets}")
+    folds = []
+    for choose_on, score_on in ((sets[0], sets[1]), (sets[1], sets[0])):
+        best = max(results, key=lambda r: _per_set(r, choose_on)[0] + _per_set(r, choose_on)[2] / 10)
+        hits, n, mrr = _per_set(best, score_on)
+        folds.append({"chosen_on": choose_on, "chosen": best["config"], "scored_on": score_on, "hits": hits, "n": n, "mrr": mrr})
+    hits = sum(f["hits"] for f in folds)
+    n = sum(f["n"] for f in folds)
+    lo, hi = wilson(hits, n)
+    return {"folds": folds, "hits": hits, "n": n, "honest_estimate": hits / n, "ci95": [round(lo, 4), round(hi, 4)]}
+
+
+def print_crossval(cv: dict) -> None:
+    print("\n" + "=" * 79)
+    for f in cv["folds"]:
+        print(
+            f"choose on {f['chosen_on']:<8} -> {f['chosen']:<30} scored on {f['scored_on']:<8}: "
+            f"{f['hits']}/{f['n']} ({f['hits'] / f['n']:.1%})"
+        )
+    lo, hi = cv["ci95"]
+    print("-" * 79)
+    print(f"honest estimate (out-of-fold): {cv['hits']}/{cv['n']} = {cv['honest_estimate']:.1%}  (95% CI {lo:.0%}-{hi:.0%})")
+    print("=" * 79)
 
 
 def print_comparison(results: list[dict], k: int) -> None:
@@ -489,16 +604,16 @@ def diff(spec_a: str, spec_b: str) -> int:
     print(f"  hit@{a['k']}: {a['hits']}/{a['questions']} -> {b['hits']}/{b['questions']}   MRR {a['mrr']:.3f} -> {b['mrr']:.3f}")
     print(f"\n  gained ({len(gained)}):")
     for q in gained:
-        print(f"    + {q}")
+        print(f"    + [{hits_b[q].get('set', '')}] {q}")
     print(f"  lost ({len(lost)}):")
     for q in lost:
-        print(f"    - {q}")
+        print(f"    - [{hits_a[q].get('set', '')}] {q}")
     better = sum(1 for _, ra, rb in moved if rb < ra)
     print(f"  rank changes among shared hits: {better} better, {len(moved) - better} worse")
     return 0
 
 
-def provenance(k: int, embed: tuple[str, str], data_dir: str, questions_path: Path) -> dict:
+def provenance(k: int, embed: tuple[str, str], data_dir: str, question_paths: list[Path]) -> dict:
     def git(*args: str) -> str:
         try:
             return subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout.strip()
@@ -508,8 +623,8 @@ def provenance(k: int, embed: tuple[str, str], data_dir: str, questions_path: Pa
     return {
         "git_commit": git("rev-parse", "HEAD"),
         "git_dirty": bool(git("status", "--porcelain", "--untracked-files=no")),
-        "questions_file": questions_path.name,
-        "questions_sha1": hashlib.sha1(questions_path.read_bytes()).hexdigest(),
+        "questions_file": ", ".join(p.name for p in question_paths),
+        "questions_sha1": {p.name: hashlib.sha1(p.read_bytes()).hexdigest() for p in question_paths},
         "embedding": f"{embed[0]}:{embed[1]}",
         "k": k,
         "data_dir": data_dir,
@@ -519,10 +634,10 @@ def provenance(k: int, embed: tuple[str, str], data_dir: str, questions_path: Pa
     }
 
 
-def save(kind: str, split: str, results: list[dict], meta: dict) -> None:
+def save(kind: str, split: str, results: list[dict], meta: dict, extra: dict | None = None) -> None:
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     out = RESULTS_DIR / f"{kind}-{split}-{time.strftime('%Y%m%d-%H%M%S')}.json"
-    out.write_text(json.dumps({"meta": meta, "results": results}, indent=2), encoding="utf-8")
+    out.write_text(json.dumps({"meta": meta, "results": results, **(extra or {})}, indent=2), encoding="utf-8")
     print(f"\nSaved {out}")
 
 
@@ -531,9 +646,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", choices=sorted(CONFIGS), help="evaluate a single configuration")
     parser.add_argument("--compare", action="store_true", help="baseline vs tuned (default)")
     parser.add_argument("--sweep", action="store_true", help="grid over chunk sizes and overlaps")
-    parser.add_argument("--ablate", action="store_true", help="isolate each chunking and retrieval component")
+    parser.add_argument("--ablate", action="store_true", help="run each variant on top of the shipping config")
+    parser.add_argument("--crossval", action="store_true", help="with --ablate over two sets: out-of-fold selection estimate")
     parser.add_argument("--diff", nargs=2, metavar=("RUN_A", "RUN_B"), help="per-question flips: file.json#config")
-    parser.add_argument("--questions", type=Path, default=QUESTIONS_FILE, help="question set (default: dev)")
+    parser.add_argument(
+        "--questions", type=Path, nargs="+", default=[QUESTIONS_FILE], help="question set file(s) (default: dev)"
+    )
     parser.add_argument("--embed", help="provider:model for every config, e.g. openai:text-embedding-3-large")
     parser.add_argument("--data-dir", default=config.DATA_DIR)
     parser.add_argument("-k", type=int, default=config.TOP_K)
@@ -549,17 +667,20 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     only = {name.strip() for name in args.only.split(",")} if args.only else None
     if only:
-        unknown = only - set(CHUNK_ABLATIONS) - set(RETRIEVAL_ABLATIONS)
+        unknown = only - set(VARIANTS)
         if unknown:
-            parser.error(f"unknown variant(s) {sorted(unknown)}; have {sorted(CHUNK_ABLATIONS) + sorted(RETRIEVAL_ABLATIONS)}")
+            parser.error(f"unknown variant(s) {sorted(unknown)}; have {sorted(VARIANTS)}")
+    if args.crossval and not args.ablate:
+        parser.error("--crossval needs --ablate (it chooses among the ablation variants)")
 
     if args.diff:
         return diff(*args.diff)
 
-    questions = load_questions(args.questions)
-    split = split_name(args.questions)
+    questions = load_question_sets(args.questions)
+    sets = list(dict.fromkeys(q["_set"] for q in questions))
+    split = sets[0] if len(sets) == 1 else "pool"
     docs = load_directory(args.data_dir)
-    print(f"{len(questions)} {split} questions | {len(docs)} loaded section(s) | k={args.k}")
+    print(f"{len(questions)} questions ({', '.join(sets)}) | {len(docs)} loaded section(s) | k={args.k}")
 
     if args.validate:
         return 1 if validate(docs, questions, strict=args.strict) else 0
@@ -570,8 +691,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.ablate:
         results = run_ablations(docs, questions, args.k, embed, only)
+        cv = crossval(results, sets) if args.crossval else None
+        if cv:
+            print_crossval(cv)
         if args.save:
-            save("ablate", split, results, meta)
+            save("ablate", split, results, meta, {"crossval": cv} if cv else None)
         return 0
 
     if args.sweep:

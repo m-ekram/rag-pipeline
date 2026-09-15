@@ -178,6 +178,145 @@ def test_maxsim_matches_brute_force():
     assert maxsim(q, d) == pytest.approx(expected)
 
 
+def test_header_target_sparse_embeds_body_only(monkeypatch, tmp_path):
+    from app.store import build_index, save_index, load_chunks
+
+    monkeypatch.setattr(config, "MIN_CHUNK_CHARS", 1)
+    monkeypatch.setattr(config, "EMBED_CACHE", False)
+    body = "text " * 30
+    docs = [Document(page_content=f"# Page\n{body}\n\n## Part\n{body}", metadata={"source": "p.md", "title": "p"})]
+    chunks = structured_split(docs, chunk_size=200, chunk_overlap=0, header_mode="path-clean", header_target="sparse")
+
+    embedded: list[str] = []
+
+    class Recorder:
+        def embed_documents(self, texts):
+            embedded.extend(texts)
+            return [[float(len(t)), 1.0] for t in texts]
+
+        def embed_query(self, text):
+            return [float(len(text)), 1.0]
+
+    store = build_index(chunks, show_progress=False, embeddings=Recorder(), model_name="recorder")
+    assert embedded and not any(t.startswith("[") for t in embedded)          # dense: body only
+    assert all(c.page_content.startswith("[") for c in chunks)                # chunk keeps its header
+    stored = list(store.docstore._dict.values())
+    assert all(d.page_content.startswith("[") and "embed_text" not in d.metadata for d in stored)
+
+    save_index(store, chunks, str(tmp_path))
+    assert all("embed_text" not in c.metadata for c in load_chunks(str(tmp_path)))
+
+
+class _FakeGenerator:
+    """Deterministic stand-in for the local LLM."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def chat(self, prompt, max_new_tokens=128):
+        self.calls += 1
+        if "passage (2-3 sentences)" in prompt:
+            return "Use app.mount with StaticFiles to serve a directory."
+        if "Rewrite this question" in prompt:
+            return "1. How to host stylesheets?\n2. Serving pictures from a folder\n- how to host stylesheets?"
+        return "1. How do I host my stylesheets and pictures?\n- Where do browser assets get served from?\nWhat is a mount?"
+
+
+def test_parse_questions_strips_numbering_and_duplicates():
+    from app.doc2query import parse_questions
+
+    assert parse_questions("1. How do I x?\n- how do I X?\n* Another question here\nshort", 5) == [
+        "How do I x?",
+        "Another question here",
+    ]
+    assert len(parse_questions("q one is long\nq two is long\nq three is long", 2)) == 2
+
+
+def test_doc2query_expansion_is_indexed_but_never_scored(monkeypatch, tmp_path):
+    from app.bm25 import FastBM25Retriever
+    from app.doc2query import expand_chunks
+    from app.store import build_index
+    from eval.evaluate import is_relevant
+
+    monkeypatch.setattr(config, "EMBED_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "EMBED_CACHE", False)
+    chunks = [
+        Document(page_content="[Static Files]\nMount a directory with StaticFiles.", metadata={"source": "s.md", "chunk_id": "a"}),
+        Document(page_content="[Testing]\nUse TestClient to call endpoints.", metadata={"source": "t.md", "chunk_id": "b"}),
+    ]
+    generator = _FakeGenerator()
+    expand_chunks(chunks, generator=generator, n=2, show_progress=False)
+
+    assert chunks[0].metadata["expansion"].startswith("How do I host my stylesheets")
+    assert chunks[0].page_content == "[Static Files]\nMount a directory with StaticFiles."  # returned text untouched
+
+    # The expansion reaches the lexical index: "stylesheets" only occurs there.
+    assert FastBM25Retriever.from_documents(chunks, k=1).invoke("stylesheets")[0].metadata["chunk_id"] == "a"
+
+    # ...and the dense one.
+    embedded: list[str] = []
+
+    class Recorder:
+        def embed_documents(self, texts):
+            embedded.extend(texts)
+            return [[1.0, float(i)] for i, _ in enumerate(texts)]
+
+        def embed_query(self, text):
+            return [1.0, 0.0]
+
+    build_index(chunks, show_progress=False, embeddings=Recorder(), model_name="recorder")
+    assert "stylesheets" in embedded[0]
+
+    # Generated text can never make a chunk count as relevant.
+    assert not is_relevant(chunks[1], {"relevant_sources": ["t.md"], "must_contain": ["stylesheets"]})
+
+    # Cached: a second expansion of the same bodies generates nothing.
+    calls = generator.calls
+    expand_chunks([Document(page_content=c.page_content, metadata={}) for c in chunks], generator=generator, n=2, show_progress=False)
+    assert generator.calls == calls
+
+
+def test_rewrite_fusion_ranks_documents_found_by_several_variants(monkeypatch, tmp_path):
+    from app.query_rewrite import RewriteFusionRetriever, query_variants
+
+    monkeypatch.setattr(config, "EMBED_CACHE_DIR", str(tmp_path))
+    generator = _FakeGenerator()
+    variants = query_variants("How do I serve CSS?", generator)
+    assert variants[0] == "How do I serve CSS?"
+    assert "How to host stylesheets?" in variants and variants[-1].startswith("Use app.mount")
+    assert len(variants) == 1 + 2 + 1  # original + 2 unique paraphrases + passage
+
+    docs = {name: Document(page_content=name, metadata={"chunk_id": name}) for name in "abcd"}
+
+    class Base:
+        def invoke(self, query):
+            # Only the original query ranks "a" first; every rewrite finds "c".
+            return [docs["a"], docs["b"]] if query == "How do I serve CSS?" else [docs["c"], docs["d"]]
+
+    fused = RewriteFusionRetriever(base=Base(), k=2, generator=generator).invoke("How do I serve CSS?")
+    assert [d.metadata["chunk_id"] for d in fused] == ["c", "d"]
+    calls = generator.calls
+    query_variants("How do I serve CSS?", generator)  # cached
+    assert generator.calls == calls
+
+
+def test_crossval_selects_on_one_set_and_scores_on_the_other():
+    from eval.evaluate import crossval
+
+    def result(name, dev_hits, v1_hits):
+        detail = [{"set": "dev", "hit": i < dev_hits, "first_relevant_rank": 1 if i < dev_hits else 0} for i in range(4)]
+        detail += [{"set": "heldout", "hit": i < v1_hits, "first_relevant_rank": 1 if i < v1_hits else 0} for i in range(4)]
+        return {"config": name, "detail": detail}
+
+    # "fit-dev" is best on dev but poor on held-out; "general" is best on held-out.
+    results = [result("tuned", 2, 2), result("fit-dev", 4, 1), result("general", 3, 3)]
+    cv = crossval(results, ["dev", "heldout"])
+
+    assert cv["folds"][0]["chosen"] == "fit-dev" and cv["folds"][0]["hits"] == 1  # chosen on dev, scored on v1
+    assert cv["folds"][1]["chosen"] == "general" and cv["folds"][1]["hits"] == 3  # chosen on v1, scored on dev
+    assert cv["hits"] == 4 and cv["n"] == 8 and cv["honest_estimate"] == 0.5
+
+
 def test_fast_bm25_matches_rank_bm25():
     import random
 
